@@ -109,6 +109,19 @@ async def run_query(
                     return
                 elif event.type == StreamEventType.DONE:
                     break
+
+            # If no tool calls from provider, try parsing XML tool calls
+            # (some providers/models output XML instead of function calling)
+            if not collected_tool_calls:
+                full_text = "".join(collected_text)
+                xml_calls = _parse_xml_tool_calls(full_text)
+                if xml_calls:
+                    collected_tool_calls = xml_calls
+                    # Remove XML from displayed text
+                    import re
+                    cleaned = re.sub(r"<tool_call>.*?</tool_call>", "", full_text, flags=re.DOTALL).strip()
+                    collected_text.clear()
+                    collected_text.append(cleaned)
         except Exception as exc:
             error_msg = str(exc)
             # Reactive compaction on "prompt too long" errors
@@ -221,3 +234,44 @@ async def _execute_tool(
 
     # Execute through the kernel's harness pipeline
     return await kernel.execute_tool(tool_call, ctx)
+
+
+def _parse_xml_tool_calls(text: str) -> list[ToolCallDelta]:
+    """Parse XML-formatted tool calls from model output.
+
+    Handles format:
+        <tool_call>
+        <tool_name>name</tool_name>
+        <arguments>{"key": "value"}</arguments>
+        </tool_call>
+    """
+    import re
+
+    pattern = r"<tool_call>\s*(.*?)\s*</tool_call>"
+    matches = re.findall(pattern, text, re.DOTALL)
+
+    calls: list[ToolCallDelta] = []
+    for i, block in enumerate(matches):
+        # Extract tool name
+        name_match = re.search(r"<tool_name>\s*(.*?)\s*</tool_name>", block, re.DOTALL)
+        if not name_match:
+            continue
+        tool_name = name_match.group(1).strip()
+
+        # Extract arguments (JSON string)
+        args_match = re.search(r"<arguments>\s*(.*?)\s*</arguments>", block, re.DOTALL)
+        args_str = args_match.group(1).strip() if args_match else "{}"
+
+        # Validate JSON
+        try:
+            json.loads(args_str)
+        except json.JSONDecodeError:
+            args_str = "{}"
+
+        calls.append(ToolCallDelta(
+            id=f"xml_call_{i}",
+            name=tool_name,
+            arguments=args_str,
+        ))
+
+    return calls
