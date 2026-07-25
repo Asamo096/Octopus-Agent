@@ -12,6 +12,7 @@ from .kernel import (
     shutdown_kernel,
 )
 from .permissions import PermissionEngine, PermissionResult
+from .rollback import Checkpoint, FileSnapshot, RollbackEngine
 from .sandbox import OperationType, Sandbox, SandboxResult
 from .state import SessionState, StateManager
 
@@ -40,6 +41,10 @@ __all__ = [
     "Hook",
     "HookEvent",
     "HookResult",
+    # rollback
+    "RollbackEngine",
+    "Checkpoint",
+    "FileSnapshot",
     # state
     "StateManager",
     "SessionState",
