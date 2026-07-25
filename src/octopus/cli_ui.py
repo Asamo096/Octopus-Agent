@@ -354,7 +354,18 @@ def print_help() -> None:
 | `/cost` | Show session cost |
 | `/compact` | Force compaction |
 | `/model` | Show/set model |
+| `/config` | Show/edit configuration |
 | `/exit` | Exit |
+
+### Config
+
+| Command | Description |
+|---------|-------------|
+| `/config show` | Show current config |
+| `/config set model <m>` | Set model name |
+| `/config set provider <p>` | Set provider name |
+| `/config set base_url <u>` | Set provider base URL |
+| `/config set key <key>` | Set OPENAI_API_KEY |
 
 ### Shortcuts
 

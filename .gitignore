@@ -176,3 +176,7 @@ config.json
 node_modules/
 frontend/dist/
 frontend/.vite/
+
+# Sensitive config files (contain API keys)
+auth.json
+config.toml

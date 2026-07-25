@@ -32,6 +32,12 @@ from octopus.cli_ui import (
     print_tool_call_start,
     print_warning,
 )
+from octopus.config.manager import (
+    load_auth,
+    load_config,
+    save_auth,
+    save_config,
+)
 from octopus.core.kernel import Context, Kernel, PermissionMode
 from octopus.loop.compaction import CompactionEngine
 from octopus.loop.context import ConversationContext
@@ -45,15 +51,20 @@ from octopus.tools.git import register_git_tool
 from octopus.tools.search import register_search_tools
 from octopus.tools.shell import register_shell_tool
 
-# Default model
-DEFAULT_MODEL = "claude-sonnet-4-20250514"
-
 # System prompt
 SYSTEM_PROMPT = (
     "You are Octopus, an AI coding assistant with harness governance. "
     "You help users with coding tasks, file operations, and shell commands. "
     "Be concise, accurate, and helpful. When writing code, follow best practices."
 )
+
+
+def _resolve_model(model_arg: str | None) -> str | None:
+    """Resolve model from argument, then config, then None."""
+    if model_arg:
+        return model_arg
+    config = load_config()
+    return config.model if config.model else None
 
 
 def _get_db_path() -> Path:
@@ -122,7 +133,7 @@ async def run_single_prompt_async(
         conversation = ConversationContext(
             session_id=ctx.session_id,
             system_prompt=SYSTEM_PROMPT,
-            model=model or DEFAULT_MODEL,
+            model=_resolve_model(model),
         )
         conversation.ensure_system_message()
         conversation.add_message(Message(role=Role.USER, content=prompt))
@@ -140,7 +151,7 @@ async def run_single_prompt_async(
             kernel,
             registry,
             ctx,
-            model=model or DEFAULT_MODEL,
+            model=_resolve_model(model),
             conversation=conversation,
             compaction=compaction,
         ):
@@ -177,7 +188,7 @@ async def run_single_prompt_async(
         duration_ms = int((time.monotonic() - turn_start) * 1000)
         stats = TurnStats(
             duration_ms=duration_ms,
-            model=model or DEFAULT_MODEL,
+            model=_resolve_model(model),
             tool_calls=tool_call_count,
         )
         print_status_line(stats)
@@ -222,7 +233,7 @@ async def run_interactive_async(
             conversation = ConversationContext(
                 session_id=ctx.session_id,
                 system_prompt=SYSTEM_PROMPT,
-                model=model or DEFAULT_MODEL,
+                model=_resolve_model(model),
             )
             conversation.ensure_system_message()
             await kernel.state.create_session(
@@ -233,7 +244,7 @@ async def run_interactive_async(
         # Display banner — show resumed session ID if resuming
         display_session_id = resume_session if resume_session else ctx.session_id
         display_banner(
-            model=model or DEFAULT_MODEL,
+            model=_resolve_model(model),
             workspace=str(ctx.workspace),
             session_id=display_session_id,
             permission_mode=permission_mode,
@@ -302,7 +313,7 @@ async def run_interactive_async(
                 kernel,
                 registry,
                 ctx,
-                model=model or DEFAULT_MODEL,
+                model=_resolve_model(model),
                 conversation=conversation,
                 compaction=compaction,
             ):
@@ -352,7 +363,7 @@ async def run_interactive_async(
             duration_ms = int((time.monotonic() - turn_start) * 1000)
             stats = TurnStats(
                 duration_ms=duration_ms,
-                model=model or DEFAULT_MODEL,
+                model=_resolve_model(model),
                 tool_calls=turn_tool_calls,
             )
             print_status_line(stats)
@@ -408,12 +419,98 @@ def _handle_slash_command(
         console.print(f"[model]Current model: {conversation.model}[/]")
         return False
 
+    if cmd == "/config":
+        _handle_config_command(command)
+        return False
+
     if cmd == "/help":
         print_help()
         return False
 
     print_error(f"Unknown command: {command}")
     return False
+
+
+def _handle_config_command(command: str) -> None:
+    """Handle /config subcommands.
+
+    Usage:
+        /config show           — show current config
+        /config set model <m>  — set model name
+        /config set provider <p> — set provider name
+        /config set base_url <url> — set provider base URL
+        /config set key <key>  — set OPENAI_API_KEY (stored in auth.json)
+    """
+    parts = command.split(maxsplit=3)
+    config = load_config()
+    auth = load_auth()
+
+    if len(parts) < 2 or parts[1] == "show":
+        # Show current config
+        console.print("[accent]Configuration[/]")
+        console.print(f"  MODEL_PROVIDER: [info]{config.model_provider or '(none)'}[/]")
+        console.print(f"  MODEL: [info]{config.model or '(none)'}[/]")
+        console.print(f"  REASONING_EFFORT: [info]{config.model_reasoning_effort}[/]")
+
+        provider = config.provider_config
+        if provider:
+            console.print(f"  BASE_URL: [dim]{provider.base_url}[/]")
+            console.print(f"  WIRE_API: [dim]{provider.wire_api}[/]")
+
+        # Show key status (not the actual key)
+        has_key = bool(auth.openai_api_key)
+        console.print(f"  API_KEY: [{'green' if has_key else 'red'}]{'set' if has_key else 'not set'}[/]")
+        return
+
+    if parts[1] == "set" and len(parts) >= 4:
+        key = parts[2]
+        value = parts[3]
+
+        if key == "model":
+            config.model = value
+            save_config(config)
+            print_success(f"Model set to: {value}")
+
+        elif key == "provider":
+            config.model_provider = value
+            # Create provider entry if it doesn't exist
+            if value not in config.model_providers:
+                from octopus.config.manager import ProviderConfig
+                config.model_providers[value] = ProviderConfig(name=value)
+            save_config(config)
+            print_success(f"Provider set to: {value}")
+
+        elif key == "base_url":
+            # Set base URL for the current provider
+            if not config.model_provider:
+                print_error("Set provider first: /config set provider <name>")
+                return
+            if config.model_provider not in config.model_providers:
+                from octopus.config.manager import ProviderConfig
+                config.model_providers[config.model_provider] = ProviderConfig(
+                    name=config.model_provider
+                )
+            config.model_providers[config.model_provider].base_url = value
+            save_config(config)
+            print_success(f"Base URL set to: {value}")
+
+        elif key == "key":
+            auth.keys["OPENAI_API_KEY"] = value
+            save_auth(auth)
+            print_success("API key saved to auth.json")
+
+        else:
+            print_error(f"Unknown config key: {key}")
+            print_info("Valid keys: model, provider, base_url, key")
+        return
+
+    # Show usage
+    console.print("[accent]Config commands:[/]")
+    console.print("  /config show              — show current config")
+    console.print("  /config set model <m>     — set model name")
+    console.print("  /config set provider <p>  — set provider name")
+    console.print("  /config set base_url <u>  — set provider base URL")
+    console.print("  /config set key <key>     — set OPENAI_API_KEY")
 
 
 async def session_resume_async(
