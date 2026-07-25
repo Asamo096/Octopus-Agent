@@ -392,7 +392,6 @@ async def run_interactive_async(
 
                 if event.type == StreamEventType.TEXT:
                     collected_text.append(event.text or "")
-                    print_assistant_text_stream(event.text or "")
 
                 elif event.type == StreamEventType.TOOL_CALL:
                     tc = event.tool_call
@@ -419,16 +418,12 @@ async def run_interactive_async(
             if current_tool is not None:
                 print_tool_call_result(current_tool, "")
 
-            # Re-render as markdown only if response contains markdown
-            # (OpenHarness pattern: stream raw for responsiveness, then
-            # re-render with markdown formatting when needed)
+            # Render response as markdown
             if collected_text:
                 full_text = "".join(collected_text)
-                if _has_markdown(full_text):
-                    print_stream_newline()
+                if full_text.strip():
+                    console.print()
                     print_assistant_markdown(full_text)
-                else:
-                    print_stream_newline()
 
             # Print turn status line
             duration_ms = int((time.monotonic() - turn_start) * 1000)
