@@ -163,9 +163,53 @@ def _parse_ddg_html(html: str, max_results: int) -> list[dict[str, str]]:
     return results
 
 
+class WebFetchTool:
+    """Fetch content from a URL."""
+
+    name = "web_fetch"
+    description = "Fetch content from a URL. Returns the page text content."
+    input_schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "url": {"type": "string", "description": "URL to fetch"},
+            "max_chars": {
+                "type": "integer",
+                "description": "Maximum characters to return (default: 10000)",
+                "default": 10000,
+            },
+        },
+        "required": ["url"],
+    }
+
+    async def execute(self, args: dict[str, Any], ctx: Context) -> ToolResult:
+        url = args["url"]
+        max_chars = args.get("max_chars", 10000)
+
+        try:
+            import httpx
+
+            async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+                resp = await client.get(url, headers={"User-Agent": "OctopusAgent/0.1"})
+                resp.raise_for_status()
+
+                content_type = resp.headers.get("content-type", "")
+                if "text" in content_type or "json" in content_type or "xml" in content_type:
+                    text = resp.text[:max_chars]
+                else:
+                    text = f"[Binary content: {content_type}, {len(resp.content)} bytes]"
+
+                return ToolResult(
+                    success=True,
+                    output=text,
+                    metadata={"status_code": resp.status_code, "content_type": content_type},
+                )
+        except Exception as e:
+            return ToolResult(success=False, output=None, error=str(e))
+
+
 def register_search_tools(registry: Any, kernel: Any) -> None:
     """Register search tools."""
-    for tool_cls in [WebSearchTool, CodeSearchTool]:
+    for tool_cls in [WebSearchTool, CodeSearchTool, WebFetchTool]:
         tool = tool_cls()
         registry.register(tool)
         kernel.register_tool(tool)
