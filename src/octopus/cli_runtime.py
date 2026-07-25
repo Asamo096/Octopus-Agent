@@ -247,7 +247,8 @@ async def run_single_prompt_async(
             ):
                 # Stop spinner on first content event
                 if not _first_content_arrived and event.type in (
-                    StreamEventType.TEXT, StreamEventType.TOOL_CALL
+                    StreamEventType.TEXT,
+                    StreamEventType.TOOL_CALL,
                 ):
                     _first_content_arrived = True
                     live.stop()
@@ -343,7 +344,9 @@ async def run_interactive_async(
             conversation = await ConversationContext.load(resume_session, kernel.state)
             if conversation:
                 conversation.sanitize()
-                print_info(f"Resumed session {resume_session[:8]} ({len(conversation.messages)} messages)")
+                print_info(
+                    f"Resumed session {resume_session[:8]} ({len(conversation.messages)} messages)"
+                )
             else:
                 print_warning(f"Session {resume_session} not found, starting new.")
 
@@ -378,7 +381,9 @@ async def run_interactive_async(
 
         # Permission mode cycling with shift+tab
         _MODE_CYCLE = ["default", "accept_edits", "full_auto", "plan"]
-        _current_mode_index = _MODE_CYCLE.index(permission_mode) if permission_mode in _MODE_CYCLE else 0
+        _current_mode_index = (
+            _MODE_CYCLE.index(permission_mode) if permission_mode in _MODE_CYCLE else 0
+        )
 
         kb = KeyBindings()
 
@@ -486,7 +491,8 @@ async def run_interactive_async(
 
                     # Stop spinner on first content event
                     if not _first_content_arrived and event.type in (
-                        StreamEventType.TEXT, StreamEventType.TOOL_CALL
+                        StreamEventType.TEXT,
+                        StreamEventType.TOOL_CALL,
                     ):
                         _first_content_arrived = True
                         live.stop()
@@ -528,9 +534,16 @@ async def run_interactive_async(
                 full_text = "".join(collected_text)
                 # Strip XML tool calls and model artifacts
                 import re
-                full_text = re.sub(r"<tool_call>.*?</tool_call>", "", full_text, flags=re.DOTALL)
-                full_text = re.sub(r"<function=.*?>.*?</function>", "", full_text, flags=re.DOTALL)
-                full_text = re.sub(r"<thinking>.*?</thinking>", "", full_text, flags=re.DOTALL)
+
+                full_text = re.sub(
+                    r"<tool_call>.*?</tool_call>", "", full_text, flags=re.DOTALL
+                )
+                full_text = re.sub(
+                    r"<function=.*?>.*?</function>", "", full_text, flags=re.DOTALL
+                )
+                full_text = re.sub(
+                    r"<thinking>.*?</thinking>", "", full_text, flags=re.DOTALL
+                )
                 full_text = re.sub(r"<\|.*?\|>", "", full_text)
                 full_text = full_text.strip()
                 if full_text:
@@ -586,7 +599,9 @@ async def _handle_slash_command(
 
     if cmd == "/cost":
         console.print(f"[cost]Session cost: ${session_cost:.4f}[/]")
-        console.print(f"[tokens]Tokens: {session_tokens_in:,} in / {session_tokens_out:,} out[/]")
+        console.print(
+            f"[tokens]Tokens: {session_tokens_in:,} in / {session_tokens_out:,} out[/]"
+        )
         return False
 
     if cmd == "/compact":
@@ -645,7 +660,9 @@ async def _handle_model_command(conversation: ConversationContext) -> None:
             if isinstance(raw_list, list):
                 for item in raw_list:
                     if isinstance(item, dict) and "id" in item:
-                        models.append({"id": item["id"], "owned_by": item.get("owned_by", "")})
+                        models.append(
+                            {"id": item["id"], "owned_by": item.get("owned_by", "")}
+                        )
         except Exception as e:
             print_warning(f"Could not fetch models: {e}")
 
@@ -657,13 +674,17 @@ async def _handle_model_command(conversation: ConversationContext) -> None:
         else:
             # Let user type model name manually
             print_info(f"No model list available for provider '{model_provider}'.")
-            print_info("You can set a model directly with: /config set model <model-name>")
+            print_info(
+                "You can set a model directly with: /config set model <model-name>"
+            )
             return
 
     if not models:
         print_warning("No models found. Configure provider first:")
         print_info("  /config set provider <name>")
-        print_info("  /config set base_url <url>  (optional for litellm-native providers)")
+        print_info(
+            "  /config set base_url <url>  (optional for litellm-native providers)"
+        )
         print_info("  /config set api_key <key>")
         return
 
@@ -695,28 +716,39 @@ async def _handle_model_command(conversation: ConversationContext) -> None:
     config.model = selected_model
     save_config(config)
     conversation.model = selected_model
-    print_success(f'Model set to: {selected_model}')
+    print_success(f"Model set to: {selected_model}")
 
 
 def _get_known_models(provider: str) -> list[str]:
     """Get known models for litellm-native providers."""
     known: dict[str, list[str]] = {
         "xiaomi_mimo": [
-            "mimo-v2.5", "mimo-v2.5-asr", "mimo-v2.5-pro",
-            "mimo-v2.5-tts", "mimo-v2.5-tts-voiceclone", "mimo-v2.5-tts-voicedesign",
+            "mimo-v2.5",
+            "mimo-v2.5-asr",
+            "mimo-v2.5-pro",
+            "mimo-v2.5-tts",
+            "mimo-v2.5-tts-voiceclone",
+            "mimo-v2.5-tts-voicedesign",
         ],
         "openai": [
-            "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o1", "o1-mini", "o3-mini",
+            "gpt-4o",
+            "gpt-4o-mini",
+            "gpt-4-turbo",
+            "o1",
+            "o1-mini",
+            "o3-mini",
         ],
         "anthropic": [
-            "claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-4-5-20251001",
+            "claude-sonnet-4-20250514",
+            "claude-opus-4-20250514",
+            "claude-haiku-4-5-20251001",
         ],
         "deepseek": [
-            "deepseek-chat", "deepseek-reasoner",
+            "deepseek-chat",
+            "deepseek-reasoner",
         ],
     }
     return known.get(provider, [])
-
 
 
 def _handle_config_command(command: str) -> None:
@@ -747,7 +779,9 @@ def _handle_config_command(command: str) -> None:
 
         # Show key status (not the actual key)
         has_key = bool(auth.openai_api_key)
-        console.print(f"  API_KEY: [{'green' if has_key else 'red'}]{'set' if has_key else 'not set'}[/]")
+        console.print(
+            f"  API_KEY: [{'green' if has_key else 'red'}]{'set' if has_key else 'not set'}[/]"
+        )
         return
 
     if parts[1] == "set" and len(parts) >= 4:
@@ -764,6 +798,7 @@ def _handle_config_command(command: str) -> None:
             # Create provider entry if it doesn't exist
             if value not in config.model_providers:
                 from octopus.config.manager import ProviderConfig
+
                 config.model_providers[value] = ProviderConfig(name=value)
             save_config(config)
             print_success(f"Provider set to: {value}")
@@ -775,6 +810,7 @@ def _handle_config_command(command: str) -> None:
                 return
             if config.model_provider not in config.model_providers:
                 from octopus.config.manager import ProviderConfig
+
                 config.model_providers[config.model_provider] = ProviderConfig(
                     name=config.model_provider
                 )

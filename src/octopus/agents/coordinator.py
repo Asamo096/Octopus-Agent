@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from octopus.agents.base import AgentDefinition
@@ -126,7 +126,7 @@ class WorkerAgent:
 
         try:
             await asyncio.wait_for(self._task, timeout=timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise
         return self.result
 
@@ -171,7 +171,9 @@ class AgentCoordinator:
         self._kernel = kernel
         self._provider = provider
         self._registry = registry
-        self._parent_session_id = parent_session_id or f"coordinator-{uuid.uuid4().hex[:8]}"
+        self._parent_session_id = (
+            parent_session_id or f"coordinator-{uuid.uuid4().hex[:8]}"
+        )
         self._agents: dict[str, LLMAgent] = {}
         self._tasks: dict[str, asyncio.Task[str]] = {}
         self._results: dict[str, str] = {}
@@ -264,11 +266,13 @@ class AgentCoordinator:
             status = "completed" if agent_id in self._results else "running"
             if task and task.done() and agent_id not in self._results:
                 status = "completed"
-            result.append({
-                "id": agent_id,
-                "name": agent.name,
-                "status": status,
-            })
+            result.append(
+                {
+                    "id": agent_id,
+                    "name": agent.name,
+                    "status": status,
+                }
+            )
         return result
 
     def get_result(self, agent_id: str) -> str | None:
@@ -353,9 +357,7 @@ class AgentCoordinator:
             registry=self._registry,
         )
         self._workers[worker_id] = worker
-        logger.info(
-            "Spawned worker %s for task: %s", worker_id, config.task[:100]
-        )
+        logger.info("Spawned worker %s for task: %s", worker_id, config.task[:100])
         return worker_id
 
     async def start_worker(self, worker_id: str) -> None:

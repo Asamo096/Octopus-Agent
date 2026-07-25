@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-import pytest
-
 from octopus.loop.compaction import (
     CompactionEngine,
-    CompactionResult,
-    CompactionStrategy,
     session_memory_compact_prompt,
 )
 from octopus.loop.context import ConversationContext
 from octopus.loop.models import Message, Role, ToolCallDelta
 
 
-def _make_context_with_tokens(n_messages: int, chars_per_msg: int = 400) -> ConversationContext:
+def _make_context_with_tokens(
+    n_messages: int, chars_per_msg: int = 400
+) -> ConversationContext:
     """Helper: create a context with roughly predictable token count."""
     ctx = ConversationContext(session_id="test-1", system_prompt="System.")
     ctx.ensure_system_message()
@@ -44,11 +42,13 @@ class TestMicrocompact:
 
         # Add 10 tool result messages (old ones should be cleared)
         for i in range(10):
-            ctx.add_message(Message(
-                role=Role.TOOL,
-                content="x" * 3000,  # Large tool result
-                tool_call_id=f"tc_{i}",
-            ))
+            ctx.add_message(
+                Message(
+                    role=Role.TOOL,
+                    content="x" * 3000,  # Large tool result
+                    tool_call_id=f"tc_{i}",
+                )
+            )
         # Recent messages (last 8) should be preserved
         ctx.add_message(Message(role=Role.USER, content="latest"))
         ctx.add_message(Message(role=Role.ASSISTANT, content="response"))
@@ -59,7 +59,7 @@ class TestMicrocompact:
         # Should have cleared some old tool results
         assert removed > 0
         # The cleared messages should have truncated content
-        for msg in ctx.messages[1:1 + (10 - 8)]:
+        for msg in ctx.messages[1 : 1 + (10 - 8)]:
             if msg.role == Role.TOOL:
                 assert "truncated" in msg.content
 
@@ -69,11 +69,13 @@ class TestMicrocompact:
 
         # Add 10 tool results
         for i in range(10):
-            ctx.add_message(Message(
-                role=Role.TOOL,
-                content="x" * 3000,
-                tool_call_id=f"tc_{i}",
-            ))
+            ctx.add_message(
+                Message(
+                    role=Role.TOOL,
+                    content="x" * 3000,
+                    tool_call_id=f"tc_{i}",
+                )
+            )
 
         engine = CompactionEngine(max_inline_tool_result=2000)
         engine.microcompact(ctx)
@@ -150,11 +152,13 @@ class TestAutoCompact:
 
         # Add old tool results that can be microcompacted
         for i in range(20):
-            ctx.add_message(Message(
-                role=Role.TOOL,
-                content="x" * 5000,  # ~1250 tokens each
-                tool_call_id=f"tc_{i}",
-            ))
+            ctx.add_message(
+                Message(
+                    role=Role.TOOL,
+                    content="x" * 5000,  # ~1250 tokens each
+                    tool_call_id=f"tc_{i}",
+                )
+            )
         ctx.add_message(Message(role=Role.USER, content="hello"))
         ctx.add_message(Message(role=Role.ASSISTANT, content="hi"))
 
@@ -174,10 +178,12 @@ class TestAutoCompact:
 
         # Add large assistant/user messages
         for i in range(10):
-            ctx.add_message(Message(
-                role=Role.ASSISTANT if i % 2 else Role.USER,
-                content="x" * 20000,  # ~5000 tokens each
-            ))
+            ctx.add_message(
+                Message(
+                    role=Role.ASSISTANT if i % 2 else Role.USER,
+                    content="x" * 20000,  # ~5000 tokens each
+                )
+            )
 
         engine = CompactionEngine(
             auto_compact_threshold=5000,
@@ -218,7 +224,7 @@ class TestSessionMemoryPrompt:
         assert "quicksort" in prompt
 
     def test_includes_tool_info(self) -> None:
-        tc = ToolCallDelta(id="tc1", name="write_file", arguments='{}')
+        tc = ToolCallDelta(id="tc1", name="write_file", arguments="{}")
         messages = [
             Message(role=Role.ASSISTANT, content="Writing file...", tool_calls=[tc]),
             Message(role=Role.TOOL, content="File written.", tool_call_id="tc1"),

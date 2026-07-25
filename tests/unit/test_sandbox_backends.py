@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 from octopus.sandbox.local import LocalBackend
 
@@ -60,11 +61,13 @@ class TestCubeBackend:
     def test_import_without_package(self) -> None:
         """CubeBackend should be importable even without cubesandbox package."""
         from octopus.sandbox.cube import CubeBackend
+
         backend = CubeBackend()
         assert backend.name == "cube"
 
     def test_config_defaults(self) -> None:
         from octopus.sandbox.cube import CubeBackend
+
         backend = CubeBackend(
             api_url="http://localhost:3000",
             template_id="tpl-test",

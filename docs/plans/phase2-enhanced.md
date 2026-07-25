@@ -25,18 +25,20 @@ Multi-provider support, advanced tools, full configuration system, and GUI found
 # providers/base.py
 class ProviderProfile(BaseModel):
     """Named provider configuration."""
+
     name: str
-    provider: str          # "anthropic", "openai", "ollama", "custom"
-    api_format: str        # "openai", "anthropic"
+    provider: str  # "anthropic", "openai", "ollama", "custom"
+    api_format: str  # "openai", "anthropic"
     model: str
     base_url: str | None = None
     api_key: str | None = None  # Resolved from env/file/keyring
+
 
 class Provider(Protocol):
     async def stream_messages(
         self, messages: list[Message], tools: list[Tool], model: str
     ) -> AsyncIterator[StreamEvent]: ...
-    
+
     async def count_tokens(self, messages: list[Message], model: str) -> int: ...
 ```
 
@@ -90,16 +92,17 @@ class OctopusSettings(BaseModel):
     providers: list[ProviderProfile] = []
     default_provider: str = "anthropic"
     default_model: str = "claude-sonnet-4-20250514"
-    
+
     # Harness governance
     permissions: PermissionSettings = PermissionSettings()
     sandbox: SandboxSettings = SandboxSettings()
-    
+
     # GUI preferences (used by Phase 3)
     gui: GUISettings = GUISettings()
-    
+
     # CLI preferences
     cli: CLISettings = CLISettings()
+
 
 class PermissionSettings(BaseModel):
     mode: Literal["default", "plan", "full_auto"] = "default"
@@ -107,7 +110,8 @@ class PermissionSettings(BaseModel):
     denied_tools: list[str] = []
     path_rules: list[PathRule] = []
     denied_commands: list[str] = ["rm -rf /", "sudo rm", "mkfs", "dd if="]
-    
+
+
 class GUISettings(BaseModel):
     theme: str = "system"
     font_size: int = 14

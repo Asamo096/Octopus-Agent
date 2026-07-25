@@ -49,9 +49,11 @@ def _config_path() -> Path:
 # Auth (auth.json)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class AuthConfig:
     """API keys loaded from auth.json."""
+
     keys: dict[str, str] = field(default_factory=dict)
 
     def get(self, key: str) -> str | None:
@@ -94,9 +96,11 @@ def save_auth(auth: AuthConfig) -> None:
 # Config (config.toml)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ProviderConfig:
     """A single model provider configuration."""
+
     name: str = ""
     base_url: str = ""
     wire_api: str = "chat_completions"  # "chat_completions" or "responses"
@@ -106,6 +110,7 @@ class ProviderConfig:
 @dataclass
 class OctopusConfig:
     """Main configuration loaded from config.toml."""
+
     model_provider: str = ""
     model: str = ""
     model_reasoning_effort: str = "high"
@@ -156,7 +161,7 @@ def _parse_toml_simple(text: str) -> dict[str, Any]:
             continue
 
         # Key = value
-        kv_match = re.match(r'^(\w+)\s*=\s*(.+)$', line)
+        kv_match = re.match(r"^(\w+)\s*=\s*(.+)$", line)
         if kv_match:
             key = kv_match.group(1)
             raw_value = kv_match.group(2).strip()
@@ -239,7 +244,9 @@ def save_config(config: OctopusConfig) -> None:
         lines.append(f'name = "{provider.name}"')
         lines.append(f'base_url = "{provider.base_url}"')
         lines.append(f'wire_api = "{provider.wire_api}"')
-        lines.append(f"requires_openai_auth = {str(provider.requires_openai_auth).lower()}")
+        lines.append(
+            f"requires_openai_auth = {str(provider.requires_openai_auth).lower()}"
+        )
         lines.append("")
 
     path.write_text("\n".join(lines), encoding="utf-8")
@@ -248,6 +255,7 @@ def save_config(config: OctopusConfig) -> None:
 # ---------------------------------------------------------------------------
 # High-level helpers
 # ---------------------------------------------------------------------------
+
 
 def get_active_model() -> str | None:
     """Get the configured model name, or None if not set."""

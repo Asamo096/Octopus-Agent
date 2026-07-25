@@ -172,7 +172,10 @@ class Hook:
             elif self.hook_type == HookType.PROMPT:
                 return await self._execute_prompt(data)
             else:
-                return HookResult(continue_execution=True, error=f"Unknown hook type: {self.hook_type}")
+                return HookResult(
+                    continue_execution=True,
+                    error=f"Unknown hook type: {self.hook_type}",
+                )
         except Exception as e:
             return HookResult(
                 continue_execution=False,
@@ -294,7 +297,9 @@ class HookManager:
         if event in self.hooks:
             self.hooks[event] = [h for h in self.hooks[event] if h.name != hook_name]
 
-    async def fire(self, event: HookEvent, data: dict[str, Any]) -> AggregatedHookResult:
+    async def fire(
+        self, event: HookEvent, data: dict[str, Any]
+    ) -> AggregatedHookResult:
         """Fire all hooks for an event, return aggregated result."""
         # Check for config hot-reload
         self._check_reload()
@@ -308,6 +313,7 @@ class HookManager:
             if hook.matcher and "tool_call" in data:
                 tool_name = data["tool_call"].tool_name
                 import fnmatch
+
                 if not fnmatch.fnmatch(tool_name, hook.matcher):
                     continue
 
@@ -364,6 +370,7 @@ class HookManager:
             return
         try:
             import yaml
+
             config = yaml.safe_load(self._config_path.read_text())
             if config and "hooks" in config:
                 self._parse_config_hooks(config["hooks"])
@@ -387,21 +394,39 @@ class HookManager:
                         timeout=hook_def.get("timeout", 30),
                         block_on_failure=hook_def.get("block_on_failure", True),
                     )
-                    hook = Hook(name, hook_type, event, priority=priority, command_config=cmd_config)
+                    hook = Hook(
+                        name,
+                        hook_type,
+                        event,
+                        priority=priority,
+                        command_config=cmd_config,
+                    )
                 elif hook_type == HookType.HTTP:
                     http_config = HttpHookConfig(
                         url=hook_def["url"],
                         headers=hook_def.get("headers", {}),
                         timeout=hook_def.get("timeout", 10),
                     )
-                    hook = Hook(name, hook_type, event, priority=priority, http_config=http_config)
+                    hook = Hook(
+                        name,
+                        hook_type,
+                        event,
+                        priority=priority,
+                        http_config=http_config,
+                    )
                 elif hook_type == HookType.PROMPT:
                     prompt_config = PromptHookConfig(
                         prompt=hook_def["prompt"],
                         model=hook_def.get("model", "claude-haiku-4-5-20251001"),
                         timeout=hook_def.get("timeout", 30),
                     )
-                    hook = Hook(name, hook_type, event, priority=priority, prompt_config=prompt_config)
+                    hook = Hook(
+                        name,
+                        hook_type,
+                        event,
+                        priority=priority,
+                        prompt_config=prompt_config,
+                    )
                 else:
                     continue
 
@@ -476,10 +501,12 @@ async def rollback_checkpoint_hook(data: dict[str, Any]) -> HookResult:
 
     try:
         from octopus.core.rollback import RollbackEngine
+
         rollback: RollbackEngine | None = getattr(kernel, "_rollback", None)
         if rollback is None:
             # Lazy-init rollback engine
             from octopus.core.rollback import RollbackEngine
+
             rollback = RollbackEngine(db_path=kernel._db_path)
             kernel._rollback = rollback
 

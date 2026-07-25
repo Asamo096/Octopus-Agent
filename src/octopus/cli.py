@@ -6,7 +6,6 @@ import asyncio
 
 import typer
 from rich.console import Console
-from rich.panel import Panel
 
 from octopus import __version__
 
@@ -23,8 +22,9 @@ def display_banner(
     permission_mode: str = "default",
 ) -> None:
     """Display the Octopus Agent info panel in Codex style."""
-    from octopus.cli_ui import display_banner as _display_banner
     from pathlib import Path
+
+    from octopus.cli_ui import display_banner as _display_banner
 
     _display_banner(
         model=model or "claude-sonnet-4-20250514",
@@ -137,20 +137,32 @@ def code(
             "Scan the current workspace for bugs, errors, and code quality issues. "
             "Fix any issues found. Report what was fixed."
         )
-        _run_async(run_single_prompt_async(prompt, model=model, permission_mode=permission_mode))
+        _run_async(
+            run_single_prompt_async(
+                prompt, model=model, permission_mode=permission_mode
+            )
+        )
     elif action == "test":
         prompt = (
             "Analyze the current workspace and generate comprehensive unit tests. "
             "Run the tests and report results. Use pytest."
         )
-        _run_async(run_single_prompt_async(prompt, model=model, permission_mode=permission_mode))
+        _run_async(
+            run_single_prompt_async(
+                prompt, model=model, permission_mode=permission_mode
+            )
+        )
     elif action == "refactor":
         prompt = (
             "Analyze the current workspace for refactoring opportunities. "
             "Improve code structure, naming, and reduce complexity. "
             "Report what was refactored."
         )
-        _run_async(run_single_prompt_async(prompt, model=model, permission_mode=permission_mode))
+        _run_async(
+            run_single_prompt_async(
+                prompt, model=model, permission_mode=permission_mode
+            )
+        )
     else:
         console.print(f"[red]Unknown action:[/] {action}")
         console.print("Available: init, fix, test, refactor, logs")
@@ -229,7 +241,9 @@ def provider(
                 console.print("  [cyan]openai[/]  — OpenAI-compatible")
                 return
             for pname, pconfig in providers.items():
-                console.print(f"  [cyan]{pname}[/] — {pconfig.get('provider', 'unknown')}")
+                console.print(
+                    f"  [cyan]{pname}[/] — {pconfig.get('provider', 'unknown')}"
+                )
                 if pconfig.get("model"):
                     console.print(f"    model: {pconfig['model']}")
                 if pconfig.get("base_url"):
@@ -242,7 +256,9 @@ def provider(
         try:
             providers = await state.get_value("config.providers", {})
             if name not in providers:
-                console.print(f"[red]Provider '{name}' not found. Use 'provider add' first.[/]")
+                console.print(
+                    f"[red]Provider '{name}' not found. Use 'provider add' first.[/]"
+                )
                 raise typer.Exit(code=1)
             await state.set_value("config.default_provider", name)
             console.print(f"[green]OK[/] Default provider set to: {name}")
@@ -306,7 +322,11 @@ def session(
         if not session_id:
             console.print("[red]Session ID is required for 'resume'.[/]")
             raise typer.Exit(code=1)
-        _run_async(session_resume_async(session_id, model=model, permission_mode=permission_mode))
+        _run_async(
+            session_resume_async(
+                session_id, model=model, permission_mode=permission_mode
+            )
+        )
     elif action == "new":
         _run_async(session_new_async(model=model, permission_mode=permission_mode))
     else:
@@ -321,7 +341,9 @@ def session(
 def permissions(
     action: str = typer.Argument(..., help="Action: list | add | remove"),
     pattern: str | None = typer.Argument(None, help="Path/command pattern"),
-    rule_type: str = typer.Option("path", "--type", "-t", help="Rule type: path | command"),
+    rule_type: str = typer.Option(
+        "path", "--type", "-t", help="Rule type: path | command"
+    ),
 ) -> None:
     """Harness permission management."""
     from octopus.cli_runtime import _get_db_path
@@ -333,7 +355,9 @@ def permissions(
             allowed_paths = await state.get_value("permissions.allowed_paths", [])
             denied_paths = await state.get_value("permissions.denied_paths", [])
             safe_commands = await state.get_value("permissions.safe_commands", [])
-            dangerous_commands = await state.get_value("permissions.dangerous_commands", [])
+            dangerous_commands = await state.get_value(
+                "permissions.dangerous_commands", []
+            )
 
             console.print("[bold]Permission rules:[/]")
             console.print()
@@ -350,7 +374,15 @@ def permissions(
                     console.print(f"    {p}")
             console.print()
             console.print("  [green]Safe commands (auto-allowed):[/]")
-            cmds = safe_commands or ["ls", "cat", "grep", "find", "git", "python", "pip"]
+            cmds = safe_commands or [
+                "ls",
+                "cat",
+                "grep",
+                "find",
+                "git",
+                "python",
+                "pip",
+            ]
             console.print(f"    {', '.join(cmds[:10])}")
             console.print()
             console.print("  [red]Dangerous commands (require approval):[/]")

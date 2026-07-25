@@ -27,11 +27,15 @@ class AgentDefinition(BaseModel):
         """Parse an agent definition from markdown with YAML frontmatter."""
         if not content.startswith("---"):
             # Plain text — use as system prompt
-            return cls(name="unnamed", description="Unnamed agent", system_prompt=content)
+            return cls(
+                name="unnamed", description="Unnamed agent", system_prompt=content
+            )
 
         parts = content.split("---", 2)
         if len(parts) < 3:
-            return cls(name="unnamed", description="Unnamed agent", system_prompt=content)
+            return cls(
+                name="unnamed", description="Unnamed agent", system_prompt=content
+            )
 
         import yaml
 

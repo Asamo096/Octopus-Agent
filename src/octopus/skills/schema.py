@@ -60,9 +60,7 @@ class SkillDefinition:
     hooks: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_file(
-        cls, path: Path, source: SkillSource
-    ) -> SkillDefinition | None:
+    def from_file(cls, path: Path, source: SkillSource) -> SkillDefinition | None:
         """Parse a SKILL.md file into a SkillDefinition.
 
         Returns None if the file doesn't exist, has invalid frontmatter,

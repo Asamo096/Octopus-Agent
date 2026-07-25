@@ -60,7 +60,10 @@ class CubeBackend:
             ) from err
 
         import os
-        api_url = self._api_url or os.environ.get("CUBE_API_URL", "http://127.0.0.1:3000")
+
+        api_url = self._api_url or os.environ.get(
+            "CUBE_API_URL", "http://127.0.0.1:3000"
+        )
         api_key = self._api_key or os.environ.get("CUBE_API_KEY")
 
         return Config(api_url=api_url, api_key=api_key)
@@ -83,6 +86,7 @@ class CubeBackend:
             ) from err
 
         import os
+
         template_id = self._template_id or os.environ.get("CUBE_TEMPLATE_ID")
         if not template_id:
             raise ValueError(
@@ -132,7 +136,9 @@ class CubeBackend:
             return SandboxResult(
                 success=result.exit_code == 0,
                 output=result.stdout if hasattr(result, "stdout") else str(result),
-                error=result.stderr if hasattr(result, "stderr") and result.exit_code != 0 else None,
+                error=result.stderr
+                if hasattr(result, "stderr") and result.exit_code != 0
+                else None,
                 exit_code=result.exit_code if hasattr(result, "exit_code") else 0,
                 duration=duration,
             )
@@ -162,7 +168,9 @@ class CubeBackend:
         if self._sandbox is None:
             raise RuntimeError("Sandbox not created")
         snapshot = self._sandbox.create_snapshot(name)
-        return snapshot.snapshot_id if hasattr(snapshot, "snapshot_id") else str(snapshot)
+        return (
+            snapshot.snapshot_id if hasattr(snapshot, "snapshot_id") else str(snapshot)
+        )
 
     async def restore_snapshot(self, snapshot_id: str) -> None:
         """Restore the CubeSandbox to a snapshot."""

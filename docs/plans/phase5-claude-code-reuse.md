@@ -50,17 +50,24 @@ claude-code is Anthropic's production CLI agent (TypeScript/Bun). While not a ha
 # src/octopus/loop/compaction.py — extend existing
 
 COMPACTABLE_TOOLS = {
-    "read_file", "write_file", "edit_file",
-    "shell", "glob", "grep",
-    "web_search", "web_fetch",
+    "read_file",
+    "write_file",
+    "edit_file",
+    "shell",
+    "glob",
+    "grep",
+    "web_search",
+    "web_fetch",
 }
+
 
 @dataclass
 class MicrocompactConfig:
-    max_age_seconds: int = 600       # Clear results older than 10 min
-    max_turns: int = 5               # Clear results older than 5 turns
-    preserve_last_n: int = 2         # Always keep last N tool results per type
+    max_age_seconds: int = 600  # Clear results older than 10 min
+    max_turns: int = 5  # Clear results older than 5 turns
+    preserve_last_n: int = 2  # Always keep last N tool results per type
     cleared_marker: str = "[Previous tool result cleared]"
+
 
 class CompactionEngine:
     # ... existing methods ...
@@ -101,14 +108,21 @@ class CompactionEngine:
         indices_to_clear: set[int] = set()
         for tool_name, indices in tool_occurrences.items():
             # Keep last N occurrences
-            to_check = indices[: -config.preserve_last_n] if config.preserve_last_n else indices
+            to_check = (
+                indices[: -config.preserve_last_n]
+                if config.preserve_last_n
+                else indices
+            )
             for idx in to_check:
                 msg = messages[idx]
                 msg_time = msg.timestamp or now
                 age_seconds = (now - msg_time).total_seconds()
                 turn_distance = len(messages) - idx
 
-                if age_seconds > config.max_age_seconds or turn_distance > config.max_turns:
+                if (
+                    age_seconds > config.max_age_seconds
+                    or turn_distance > config.max_turns
+                ):
                     # Clear tool results in this message
                     for tc in msg.tool_calls:
                         if tc.function.name in COMPACTABLE_TOOLS:
@@ -345,9 +359,10 @@ if cost > 0:
 ```python
 # src/octopus/tools/base.py — extend existing Tool class
 
+
 class ToolInterruptBehavior(str, Enum):
-    CANCEL = "cancel"   # Stop and discard result
-    BLOCK = "block"     # Keep running, queue new input
+    CANCEL = "cancel"  # Stop and discard result
+    BLOCK = "block"  # Keep running, queue new input
 
 
 class Tool(Protocol):
@@ -373,8 +388,7 @@ class Tool(Protocol):
         """Validate input before execution. Override for tool-specific checks."""
         return ValidationResult(valid=True)
 
-    async def call(self, context: ToolContext, **kwargs) -> ToolResult:
-        ...
+    async def call(self, context: ToolContext, **kwargs) -> ToolResult: ...
 
     def get_activity_description(self, **kwargs) -> str | None:
         """Human-readable activity for spinner. E.g., 'Reading src/foo.py'"""
@@ -405,6 +419,7 @@ class ToolResult:
 ```python
 # src/octopus/tools/base.py — add to tool execution
 
+
 async def enforce_result_size(result: ToolResult, tool: Tool) -> ToolResult:
     """Persist large results to disk, return preview."""
     if len(result.output) <= tool.max_result_size_chars:
@@ -418,6 +433,7 @@ async def enforce_result_size(result: ToolResult, tool: Tool) -> ToolResult:
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     import hashlib
+
     content_hash = hashlib.sha256(result.output.encode()).hexdigest()[:12]
     persist_path = cache_dir / f"{tool.name}_{content_hash}.txt"
 
@@ -532,6 +548,7 @@ class SkillDefinition:
 
         # Extract argument names from body ($ARGUMENTS, $1, $2, etc.)
         import re
+
         arg_names = list(set(re.findall(r"\$(?:ARGUMENTS|\d+)", body)))
 
         return cls(
@@ -852,6 +869,7 @@ class FileStateCache:
 ```python
 # src/octopus/tools/filesystem.py — modify ReadFileTool.call()
 
+
 async def call(self, context: ToolContext, path: str, **kwargs) -> ToolResult:
     # Check cache first
     cached = context.file_cache.get(path)
@@ -890,6 +908,7 @@ async def call(self, context: ToolContext, path: str, **kwargs) -> ToolResult:
 ```python
 # src/octopus/loop/compaction.py — extend existing
 
+
 async def session_memory_compact(
     self,
     messages: list[Message],
@@ -918,9 +937,7 @@ async def session_memory_compact(
             await memory_manager.store_from_extraction(fact)
 
     # Step 2: Generate summary with memory awareness
-    summary_prompt = self._build_memory_aware_summary_prompt(
-        messages, extracted_facts
-    )
+    summary_prompt = self._build_memory_aware_summary_prompt(messages, extracted_facts)
     summary_response = await provider.chat(
         messages=[{"role": "user", "content": summary_prompt}],
         model=self.config.summary_model,
@@ -982,7 +999,7 @@ def _parse_extracted_facts(self, response: str) -> list[str]:
             # Strip list markers
             for prefix in ("- ", "* ", "1. ", "2. ", "3. "):
                 if line.startswith(prefix):
-                    line = line[len(prefix):]
+                    line = line[len(prefix) :]
                     break
             facts.append(line)
     return facts[:20]  # Cap at 20 facts per compaction
@@ -1019,6 +1036,7 @@ summary_max_tokens: int = 2000
 ```python
 # src/octopus/loop/engine.py — extend AgentLoop
 
+
 @dataclass
 class LoopBudget:
     """Budget constraints for agent loop execution."""
@@ -1028,7 +1046,9 @@ class LoopBudget:
     max_tool_calls: int | None = None
     max_input_tokens: int | None = None
 
-    def check(self, tracker: CostTracker, turn_count: int, tool_call_count: int) -> BudgetViolation | None:
+    def check(
+        self, tracker: CostTracker, turn_count: int, tool_call_count: int
+    ) -> BudgetViolation | None:
         """Check if any budget constraint is violated."""
         if self.max_turns and turn_count >= self.max_turns:
             return BudgetViolation(
@@ -1116,6 +1136,7 @@ if violation:
 ```python
 # src/octopus/loop/models.py — add message type
 
+
 class CompactBoundaryData(BaseModel):
     """Metadata for a compaction boundary message."""
 
@@ -1129,6 +1150,7 @@ class CompactBoundaryData(BaseModel):
 
 
 # src/octopus/loop/compaction.py — emit boundary after compaction
+
 
 def apply_compaction(
     self,
@@ -1172,6 +1194,7 @@ def apply_compaction(
 
 ```python
 # src/octopus/agents/coordinator.py — extend existing
+
 
 @dataclass
 class WorkerConfig:
@@ -1262,6 +1285,7 @@ class AgentCoordinator:
     def spawn_worker(self, config: WorkerConfig) -> str:
         """Spawn a background worker agent."""
         import uuid
+
         worker_id = str(uuid.uuid4())[:8]
         worker = WorkerAgent(
             worker_id=worker_id,
@@ -1315,6 +1339,7 @@ class AgentCoordinator:
 ```python
 # src/octopus/loop/compaction.py — improve reactive_compact
 
+
 async def reactive_compact(
     self,
     context: ConversationContext,
@@ -1332,8 +1357,12 @@ async def reactive_compact(
     error_msg = str(error).lower()
     is_prompt_too_long = any(
         pattern in error_msg
-        for pattern in ("prompt is too long", "context_length_exceeded",
-                        "maximum context length", "tokens exceeds")
+        for pattern in (
+            "prompt is too long",
+            "context_length_exceeded",
+            "maximum context length",
+            "tokens exceeds",
+        )
     )
 
     if not is_prompt_too_long:
@@ -1343,20 +1372,26 @@ async def reactive_compact(
 
     if attempt == 1:
         # Level 1: microcompact only
-        messages = self.time_based_microcompact(messages, MicrocompactConfig(
-            max_age_seconds=60,      # More aggressive: 1 min
-            max_turns=3,
-            preserve_last_n=1,
-        ))
+        messages = self.time_based_microcompact(
+            messages,
+            MicrocompactConfig(
+                max_age_seconds=60,  # More aggressive: 1 min
+                max_turns=3,
+                preserve_last_n=1,
+            ),
+        )
         strategy = "reactive_microcompact"
 
     elif attempt == 2:
         # Level 2: microcompact + context collapse
-        messages = self.time_based_microcompact(messages, MicrocompactConfig(
-            max_age_seconds=30,
-            max_turns=2,
-            preserve_last_n=0,       # Clear ALL old results
-        ))
+        messages = self.time_based_microcompact(
+            messages,
+            MicrocompactConfig(
+                max_age_seconds=30,
+                max_turns=2,
+                preserve_last_n=0,  # Clear ALL old results
+            ),
+        )
         messages = self.context_collapse(messages, max_chars=500_000)
         strategy = "reactive_collapse"
 

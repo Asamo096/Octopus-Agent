@@ -142,7 +142,9 @@ class PluginManager:
                             )
                             continue
 
-                        hook = Hook(f"{name}:{func_name}", HookType.PYTHON, event, callback=func)
+                        hook = Hook(
+                            f"{name}:{func_name}", HookType.PYTHON, event, callback=func
+                        )
                         hook_manager.register(event, hook)
                         info.loaded_hooks.append(hook)
                         count += 1

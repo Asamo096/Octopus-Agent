@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
-from datetime import UTC, datetime
+
+import pytest
 
 from octopus.memory.manager import MemoryManager
 from octopus.memory.schema import MemoryEntry, MemoryType
@@ -99,15 +99,31 @@ class TestMemoryManager:
         assert len(entries) == 2
 
     def test_list_filter_by_type(self, manager: MemoryManager) -> None:
-        manager.store(MemoryEntry(name="user-mem", description="u", content="u", memory_type=MemoryType.USER))
-        manager.store(MemoryEntry(name="proj-mem", description="p", content="p", memory_type=MemoryType.PROJECT))
+        manager.store(
+            MemoryEntry(
+                name="user-mem",
+                description="u",
+                content="u",
+                memory_type=MemoryType.USER,
+            )
+        )
+        manager.store(
+            MemoryEntry(
+                name="proj-mem",
+                description="p",
+                content="p",
+                memory_type=MemoryType.PROJECT,
+            )
+        )
 
         user_entries = manager.list_entries(memory_type=MemoryType.USER)
         assert len(user_entries) == 1
         assert user_entries[0].name == "user-mem"
 
     def test_list_filter_by_tag(self, manager: MemoryManager) -> None:
-        manager.store(MemoryEntry(name="tagged", description="t", content="t", tags=["important"]))
+        manager.store(
+            MemoryEntry(name="tagged", description="t", content="t", tags=["important"])
+        )
         manager.store(MemoryEntry(name="untagged", description="u", content="u"))
 
         tagged = manager.list_entries(tag="important")
@@ -115,16 +131,32 @@ class TestMemoryManager:
         assert tagged[0].name == "tagged"
 
     def test_recall_by_name(self, manager: MemoryManager) -> None:
-        manager.store(MemoryEntry(name="dark-mode", description="User prefers dark mode", content="Dark mode enabled"))
-        manager.store(MemoryEntry(name="light-theme", description="Light theme", content="Light theme"))
+        manager.store(
+            MemoryEntry(
+                name="dark-mode",
+                description="User prefers dark mode",
+                content="Dark mode enabled",
+            )
+        )
+        manager.store(
+            MemoryEntry(
+                name="light-theme", description="Light theme", content="Light theme"
+            )
+        )
 
         results = manager.recall("dark mode")
         assert len(results) >= 1
         assert results[0].name == "dark-mode"
 
     def test_recall_by_content(self, manager: MemoryManager) -> None:
-        manager.store(MemoryEntry(name="pref", description="preferences", content="Prefers Python 3.11"))
-        manager.store(MemoryEntry(name="other", description="other", content="Something else"))
+        manager.store(
+            MemoryEntry(
+                name="pref", description="preferences", content="Prefers Python 3.11"
+            )
+        )
+        manager.store(
+            MemoryEntry(name="other", description="other", content="Something else")
+        )
 
         results = manager.recall("Python 3.11")
         assert len(results) >= 1
@@ -132,7 +164,11 @@ class TestMemoryManager:
 
     def test_recall_limit(self, manager: MemoryManager) -> None:
         for i in range(10):
-            manager.store(MemoryEntry(name=f"entry-{i}", description=f"entry {i}", content=f"content {i}"))
+            manager.store(
+                MemoryEntry(
+                    name=f"entry-{i}", description=f"entry {i}", content=f"content {i}"
+                )
+            )
 
         results = manager.recall("entry", limit=3)
         assert len(results) == 3

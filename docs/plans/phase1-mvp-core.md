@@ -106,17 +106,22 @@ class Kernel:
 ```python
 class PermissionEngine:
     """Multi-level permission checker."""
-    
+
     # Three modes
-    DEFAULT = "default"    # Confirm mutating operations
-    PLAN = "plan"          # Block all writes
+    DEFAULT = "default"  # Confirm mutating operations
+    PLAN = "plan"  # Block all writes
     FULL_AUTO = "full_auto"  # Allow everything
-    
+
     SENSITIVE_PATHS = [
-        "~/.ssh/*", "~/.aws/*", "~/.gnupg/*",
-        "**/.env", "**/.env.*", "**/id_rsa*", "**/id_ed25519*",
+        "~/.ssh/*",
+        "~/.aws/*",
+        "~/.gnupg/*",
+        "**/.env",
+        "**/.env.*",
+        "**/id_rsa*",
+        "**/id_ed25519*",
     ]
-    
+
     def check(self, tool_call: ToolCall, context: Context) -> PermissionResult:
         """Check if tool call is allowed."""
 ```
@@ -206,8 +211,9 @@ class Tool(Protocol):
     name: str
     description: str
     input_schema: dict[str, Any]
-    
+
     async def execute(self, args: dict, context: Context) -> ToolResult: ...
+
 
 class ToolRegistry:
     def register(self, tool: Tool): ...
@@ -219,22 +225,31 @@ class ToolRegistry:
 ```python
 class ReadFileTool(Tool):
     name = "read_file"
+
     async def execute(self, args, context) -> ToolResult: ...
+
 
 class WriteFileTool(Tool):
     name = "write_file"
+
     async def execute(self, args, context) -> ToolResult: ...
+
 
 class EditFileTool(Tool):
     name = "edit_file"
+
     async def execute(self, args, context) -> ToolResult: ...
+
 
 class GlobTool(Tool):
     name = "glob"
+
     async def execute(self, args, context) -> ToolResult: ...
+
 
 class GrepTool(Tool):
     name = "grep"
+
     async def execute(self, args, context) -> ToolResult: ...
 ```
 
@@ -286,12 +301,14 @@ class LiteLLMProvider:
 ```python
 app = typer.Typer(name="octopus", help="AI agent with harness governance")
 
+
 @app.callback()
 def main(
     gui: bool = typer.Option(False, "--gui", help="Launch GUI (default on desktop)"),
     version: bool = typer.Option(False, "--version"),
 ):
     """Octopus Agent — AI coding assistant with harness governance."""
+
 
 @app.command()
 def cli(
@@ -301,11 +318,13 @@ def cli(
 ):
     """Enter CLI interactive mode or run a single prompt."""
 
+
 @app.command()
 def code(
     action: str = typer.Argument(..., help="init|fix|test|refactor|logs"),
 ):
     """Code agent subcommands."""
+
 
 @app.command()
 def config(

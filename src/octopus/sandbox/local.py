@@ -50,9 +50,7 @@ class LocalBackend:
                 stderr=asyncio.subprocess.PIPE,
                 cwd=workdir,
             )
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout
-            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
             duration = time.monotonic() - start
 
             return SandboxResult(

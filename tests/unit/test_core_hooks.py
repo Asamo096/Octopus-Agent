@@ -4,14 +4,11 @@ from __future__ import annotations
 
 from octopus.core.hooks import (
     AggregatedHookResult,
-    CommandHookConfig,
     Hook,
     HookEvent,
     HookManager,
     HookResult,
     HookType,
-    HttpHookConfig,
-    PromptHookConfig,
 )
 
 
@@ -68,7 +65,9 @@ class TestHook:
 class TestHookManager:
     def test_register_and_get(self) -> None:
         manager = HookManager()
-        hook = Hook("test", HookType.PYTHON, HookEvent.PRE_TOOL_USE, callback=lambda d: True)
+        hook = Hook(
+            "test", HookType.PYTHON, HookEvent.PRE_TOOL_USE, callback=lambda d: True
+        )
         manager.register(HookEvent.PRE_TOOL_USE, hook)
 
         hooks = manager.get_hooks(HookEvent.PRE_TOOL_USE)
@@ -77,8 +76,20 @@ class TestHookManager:
 
     def test_priority_ordering(self) -> None:
         manager = HookManager()
-        hook_low = Hook("low", HookType.PYTHON, HookEvent.PRE_TOOL_USE, callback=lambda d: True, priority=10)
-        hook_high = Hook("high", HookType.PYTHON, HookEvent.PRE_TOOL_USE, callback=lambda d: True, priority=100)
+        hook_low = Hook(
+            "low",
+            HookType.PYTHON,
+            HookEvent.PRE_TOOL_USE,
+            callback=lambda d: True,
+            priority=10,
+        )
+        hook_high = Hook(
+            "high",
+            HookType.PYTHON,
+            HookEvent.PRE_TOOL_USE,
+            callback=lambda d: True,
+            priority=100,
+        )
         manager.register(HookEvent.PRE_TOOL_USE, hook_low)
         manager.register(HookEvent.PRE_TOOL_USE, hook_high)
 
@@ -101,8 +112,26 @@ class TestHookManager:
         async def runner(data):
             return HookResult(continue_execution=True)
 
-        manager.register(HookEvent.PRE_TOOL_USE, Hook("blocker", HookType.PYTHON, HookEvent.PRE_TOOL_USE, callback=blocker, priority=100))
-        manager.register(HookEvent.PRE_TOOL_USE, Hook("runner", HookType.PYTHON, HookEvent.PRE_TOOL_USE, callback=runner, priority=50))
+        manager.register(
+            HookEvent.PRE_TOOL_USE,
+            Hook(
+                "blocker",
+                HookType.PYTHON,
+                HookEvent.PRE_TOOL_USE,
+                callback=blocker,
+                priority=100,
+            ),
+        )
+        manager.register(
+            HookEvent.PRE_TOOL_USE,
+            Hook(
+                "runner",
+                HookType.PYTHON,
+                HookEvent.PRE_TOOL_USE,
+                callback=runner,
+                priority=50,
+            ),
+        )
 
         result = await manager.fire(HookEvent.PRE_TOOL_USE, {})
         assert result.blocked
@@ -117,7 +146,12 @@ class TestHookManager:
                 modified_data={"extra": "added"},
             )
 
-        manager.register(HookEvent.PRE_TOOL_USE, Hook("modifier", HookType.PYTHON, HookEvent.PRE_TOOL_USE, callback=modifier))
+        manager.register(
+            HookEvent.PRE_TOOL_USE,
+            Hook(
+                "modifier", HookType.PYTHON, HookEvent.PRE_TOOL_USE, callback=modifier
+            ),
+        )
         result = await manager.fire(HookEvent.PRE_TOOL_USE, {"original": True})
         assert result.modified_data is not None
         assert result.modified_data["extra"] == "added"
@@ -125,7 +159,9 @@ class TestHookManager:
 
     def test_unregister(self) -> None:
         manager = HookManager()
-        hook = Hook("test", HookType.PYTHON, HookEvent.PRE_TOOL_USE, callback=lambda d: True)
+        hook = Hook(
+            "test", HookType.PYTHON, HookEvent.PRE_TOOL_USE, callback=lambda d: True
+        )
         manager.register(HookEvent.PRE_TOOL_USE, hook)
         manager.unregister(HookEvent.PRE_TOOL_USE, "test")
 
@@ -134,8 +170,16 @@ class TestHookManager:
 
     def test_clear(self) -> None:
         manager = HookManager()
-        manager.register(HookEvent.PRE_TOOL_USE, Hook("a", HookType.PYTHON, HookEvent.PRE_TOOL_USE, callback=lambda d: True))
-        manager.register(HookEvent.POST_TOOL_USE, Hook("b", HookType.PYTHON, HookEvent.POST_TOOL_USE, callback=lambda d: True))
+        manager.register(
+            HookEvent.PRE_TOOL_USE,
+            Hook("a", HookType.PYTHON, HookEvent.PRE_TOOL_USE, callback=lambda d: True),
+        )
+        manager.register(
+            HookEvent.POST_TOOL_USE,
+            Hook(
+                "b", HookType.PYTHON, HookEvent.POST_TOOL_USE, callback=lambda d: True
+            ),
+        )
 
         manager.clear(HookEvent.PRE_TOOL_USE)
         assert len(manager.get_hooks(HookEvent.PRE_TOOL_USE)) == 0
@@ -143,16 +187,30 @@ class TestHookManager:
 
     def test_clear_all(self) -> None:
         manager = HookManager()
-        manager.register(HookEvent.PRE_TOOL_USE, Hook("a", HookType.PYTHON, HookEvent.PRE_TOOL_USE, callback=lambda d: True))
-        manager.register(HookEvent.POST_TOOL_USE, Hook("b", HookType.PYTHON, HookEvent.POST_TOOL_USE, callback=lambda d: True))
+        manager.register(
+            HookEvent.PRE_TOOL_USE,
+            Hook("a", HookType.PYTHON, HookEvent.PRE_TOOL_USE, callback=lambda d: True),
+        )
+        manager.register(
+            HookEvent.POST_TOOL_USE,
+            Hook(
+                "b", HookType.PYTHON, HookEvent.POST_TOOL_USE, callback=lambda d: True
+            ),
+        )
 
         manager.clear()
         assert len(manager.list_events()) == 0
 
     def test_list_events(self) -> None:
         manager = HookManager()
-        manager.register(HookEvent.PRE_TOOL_USE, Hook("a", HookType.PYTHON, HookEvent.PRE_TOOL_USE, callback=lambda d: True))
-        manager.register(HookEvent.AUDIT_LOG, Hook("b", HookType.PYTHON, HookEvent.AUDIT_LOG, callback=lambda d: True))
+        manager.register(
+            HookEvent.PRE_TOOL_USE,
+            Hook("a", HookType.PYTHON, HookEvent.PRE_TOOL_USE, callback=lambda d: True),
+        )
+        manager.register(
+            HookEvent.AUDIT_LOG,
+            Hook("b", HookType.PYTHON, HookEvent.AUDIT_LOG, callback=lambda d: True),
+        )
 
         events = manager.list_events()
         assert HookEvent.PRE_TOOL_USE in events

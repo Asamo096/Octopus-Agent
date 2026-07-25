@@ -89,7 +89,10 @@ class LoopBudget:
                 limit=self.max_tool_calls,
             )
 
-        if self.max_input_tokens is not None and total_input_tokens >= self.max_input_tokens:
+        if (
+            self.max_input_tokens is not None
+            and total_input_tokens >= self.max_input_tokens
+        ):
             return BudgetViolation(
                 type="max_input_tokens",
                 message=f"Reached maximum input tokens ({self.max_input_tokens})",
@@ -205,8 +208,11 @@ async def run_query(
             # Strip thinking blocks from output (some models leak internal reasoning)
             if collected_tool_calls:
                 import re
+
                 full_text = "".join(collected_text)
-                cleaned = re.sub(r"<thinking>.*?</thinking>", "", full_text, flags=re.DOTALL).strip()
+                cleaned = re.sub(
+                    r"<thinking>.*?</thinking>", "", full_text, flags=re.DOTALL
+                ).strip()
                 if cleaned != full_text.strip():
                     collected_text.clear()
                     if cleaned:
@@ -216,6 +222,7 @@ async def run_query(
             # (some providers/models output XML instead of function calling)
             if not collected_tool_calls:
                 import re
+
                 full_text = "".join(collected_text)
                 # Strip thinking blocks
                 full_text = _strip_model_artifacts(full_text)
@@ -232,8 +239,14 @@ async def run_query(
                     if code_calls:
                         collected_tool_calls = code_calls
                         import re
+
                         # Remove code blocks (with or without language tag, with or without closing ```)
-                        cleaned = re.sub(r"```(?:bash|sh|shell|zsh)?\n.*?(?:```|$)", "", full_text, flags=re.DOTALL)
+                        cleaned = re.sub(
+                            r"```(?:bash|sh|shell|zsh)?\n.*?(?:```|$)",
+                            "",
+                            full_text,
+                            flags=re.DOTALL,
+                        )
                         # Also remove stray ``` markers
                         cleaned = re.sub(r"```", "", cleaned)
                         cleaned = cleaned.strip()
@@ -244,11 +257,13 @@ async def run_query(
                         # If the entire response looks like a bare shell command, execute it
                         stripped = full_text.strip()
                         if _is_shell_command(stripped):
-                            collected_tool_calls = [ToolCallDelta(
-                                id="bare_cmd_0",
-                                name="shell",
-                                arguments=json.dumps({"command": stripped}),
-                            )]
+                            collected_tool_calls = [
+                                ToolCallDelta(
+                                    id="bare_cmd_0",
+                                    name="shell",
+                                    arguments=json.dumps({"command": stripped}),
+                                )
+                            ]
                             collected_text.clear()
 
             # Normalize tool names and deduplicate
@@ -278,7 +293,8 @@ async def run_query(
                     rc = compaction.reactive_compact(conversation, error_msg)
                     logger.info(
                         "Reactive compact applied: %d -> %d tokens",
-                        rc.tokens_before, rc.tokens_after,
+                        rc.tokens_before,
+                        rc.tokens_after,
                     )
                     yield StreamEvent(
                         type=StreamEventType.STATUS,
@@ -408,11 +424,10 @@ async def _execute_tool(
     return await kernel.execute_tool(tool_call, ctx)
 
 
-
-
 def _strip_model_artifacts(text: str) -> str:
     """Strip model-specific artifacts from output text."""
     import re
+
     # Strip thinking blocks
     text = re.sub(r"<thinking>.*?</thinking>", "", text, flags=re.DOTALL)
     # Strip <|python_tag|> and similar markers
@@ -436,10 +451,34 @@ def _is_shell_command(text: str) -> bool:
         return False
     # Common shell command prefixes
     prefixes = [
-        "echo ", "cat ", "ls ", "rm ", "mv ", "cp ", "mkdir ", "touch ",
-        "chmod ", "chown ", "grep ", "find ", "sed ", "awk ", "curl ",
-        "wget ", "pip ", "npm ", "git ", "python ", "python3 ",
-        "cd ", "pwd", "whoami", "date", "which ", "apt ", "brew ",
+        "echo ",
+        "cat ",
+        "ls ",
+        "rm ",
+        "mv ",
+        "cp ",
+        "mkdir ",
+        "touch ",
+        "chmod ",
+        "chown ",
+        "grep ",
+        "find ",
+        "sed ",
+        "awk ",
+        "curl ",
+        "wget ",
+        "pip ",
+        "npm ",
+        "git ",
+        "python ",
+        "python3 ",
+        "cd ",
+        "pwd",
+        "whoami",
+        "date",
+        "which ",
+        "apt ",
+        "brew ",
     ]
     first_line = lines[0].strip()
     return any(first_line.startswith(p) for p in prefixes)
@@ -459,13 +498,19 @@ def _parse_xml_tool_calls(text: str) -> list[ToolCallDelta]:
         if not name_match:
             continue
         tool_name = name_match.group(1).strip()
-        args_match = re.search(r"<(?:arguments|tool_input)>\s*(.*?)\s*</(?:arguments|tool_input)>", block, re.DOTALL)
+        args_match = re.search(
+            r"<(?:arguments|tool_input)>\s*(.*?)\s*</(?:arguments|tool_input)>",
+            block,
+            re.DOTALL,
+        )
         args_str = args_match.group(1).strip() if args_match else "{}"
         try:
             json.loads(args_str)
         except json.JSONDecodeError:
             args_str = "{}"
-        calls.append(ToolCallDelta(id=f"xml_call_{call_id}", name=tool_name, arguments=args_str))
+        calls.append(
+            ToolCallDelta(id=f"xml_call_{call_id}", name=tool_name, arguments=args_str)
+        )
         call_id += 1
 
     # Format 2: <function=name>...</function>
@@ -481,7 +526,9 @@ def _parse_xml_tool_calls(text: str) -> list[ToolCallDelta]:
             args_str = json.dumps({"command": params["cmd"]})
         else:
             args_str = json.dumps(params)
-        calls.append(ToolCallDelta(id=f"xml_call_{call_id}", name=tool_name, arguments=args_str))
+        calls.append(
+            ToolCallDelta(id=f"xml_call_{call_id}", name=tool_name, arguments=args_str)
+        )
         call_id += 1
 
     return calls
@@ -490,6 +537,7 @@ def _parse_xml_tool_calls(text: str) -> list[ToolCallDelta]:
 def _strip_xml_tool_calls(text: str) -> str:
     """Remove all XML tool call formats from text."""
     import re
+
     text = re.sub(r"<tool_call>.*?</tool_call>", "", text, flags=re.DOTALL)
     text = re.sub(r"<function=.*?>.*?</function>", "", text, flags=re.DOTALL)
     return text.strip()
@@ -567,13 +615,18 @@ def _parse_code_block_calls(text: str) -> list[ToolCallDelta]:
             continue
 
         # Skip if it looks like Python, JS, etc. (not a shell command)
-        if any(command.startswith(lang) for lang in ["python", "py", "import ", "from ", "def ", "class "]):
+        if any(
+            command.startswith(lang)
+            for lang in ["python", "py", "import ", "from ", "def ", "class "]
+        ):
             continue
 
-        calls.append(ToolCallDelta(
-            id=f"code_block_{i}",
-            name="shell",
-            arguments=json.dumps({"command": command}),
-        ))
+        calls.append(
+            ToolCallDelta(
+                id=f"code_block_{i}",
+                name="shell",
+                arguments=json.dumps({"command": command}),
+            )
+        )
 
     return calls

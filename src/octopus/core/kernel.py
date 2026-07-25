@@ -255,7 +255,9 @@ class Kernel:
             # Accept edits & plan mode: allow write/read/delete, block shell execution
             if tool_call.tool_name == "shell":
                 duration = time.monotonic() - start_time
-                await self._log_audit(tool_call, ctx, None, duration, "EXECUTION_BLOCKED")
+                await self._log_audit(
+                    tool_call, ctx, None, duration, "EXECUTION_BLOCKED"
+                )
                 return ToolResult(
                     success=False,
                     output=None,

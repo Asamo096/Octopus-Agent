@@ -193,15 +193,24 @@ class WebFetchTool:
                 resp.raise_for_status()
 
                 content_type = resp.headers.get("content-type", "")
-                if "text" in content_type or "json" in content_type or "xml" in content_type:
+                if (
+                    "text" in content_type
+                    or "json" in content_type
+                    or "xml" in content_type
+                ):
                     text = resp.text[:max_chars]
                 else:
-                    text = f"[Binary content: {content_type}, {len(resp.content)} bytes]"
+                    text = (
+                        f"[Binary content: {content_type}, {len(resp.content)} bytes]"
+                    )
 
                 return ToolResult(
                     success=True,
                     output=text,
-                    metadata={"status_code": resp.status_code, "content_type": content_type},
+                    metadata={
+                        "status_code": resp.status_code,
+                        "content_type": content_type,
+                    },
                 )
         except Exception as e:
             return ToolResult(success=False, output=None, error=str(e))

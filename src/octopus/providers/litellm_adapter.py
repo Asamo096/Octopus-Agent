@@ -88,7 +88,9 @@ class LiteLLMProvider:
                     delay = min(base_delay * (2 ** (attempt - 1)), max_delay)
                     logger.warning(
                         "Rate limited (attempt %d/%d), retrying in %.1fs",
-                        attempt, max_retries, delay,
+                        attempt,
+                        max_retries,
+                        delay,
                     )
                     yield StreamEvent(
                         type=StreamEventType.STATUS,

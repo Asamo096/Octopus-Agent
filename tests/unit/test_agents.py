@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
 
 from octopus.agents.base import AgentDefinition
@@ -44,7 +43,9 @@ class TestAgentDefinition:
 class TestAgentRegistry:
     def test_register_and_get(self) -> None:
         registry = AgentRegistry()
-        defn = AgentDefinition(name="my-agent", description="test", system_prompt="test")
+        defn = AgentDefinition(
+            name="my-agent", description="test", system_prompt="test"
+        )
         registry.register(defn)
 
         got = registry.get("my-agent")

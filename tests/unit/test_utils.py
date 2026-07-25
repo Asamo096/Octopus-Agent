@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
 
 from octopus.utils.files import atomic_write, file_lock

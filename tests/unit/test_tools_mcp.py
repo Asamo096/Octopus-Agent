@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-from unittest.mock import AsyncMock
 
 from octopus.tools.mcp import MCPClient, MCPToolAdapter
 
@@ -54,7 +53,10 @@ class TestMCPToolAdapter:
         tool_def = {
             "name": "read_file",
             "description": "Read a file",
-            "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}},
+            "inputSchema": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+            },
         }
         adapter = MCPToolAdapter(client, tool_def)
         assert adapter.name == "mcp_server1_read_file"
@@ -71,4 +73,6 @@ class TestMCPToolAdapter:
         ctx = Context(session_id="test")
         result = await adapter.execute({}, ctx)
         assert not result.success
-        assert "not connected" not in (result.error or "")  # Should say "mcp" package needed
+        assert "not connected" not in (
+            result.error or ""
+        )  # Should say "mcp" package needed

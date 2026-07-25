@@ -83,8 +83,7 @@ class MCPClient:
         # to the MCP server via the appropriate transport
         logger.info("MCP client %s: call tool %s", self.name, name)
         raise NotImplementedError(
-            "MCP tool calls require the 'mcp' package. "
-            "Install with: pip install mcp"
+            "MCP tool calls require the 'mcp' package. Install with: pip install mcp"
         )
 
     async def list_resources(self) -> list[dict[str, Any]]:
@@ -121,7 +120,9 @@ class MCPToolAdapter(Tool):
         self._tool_def = tool_def
         self.name = f"mcp_{client.name}_{tool_def['name']}"
         self.description = tool_def.get("description", f"MCP tool: {tool_def['name']}")
-        self.input_schema = tool_def.get("inputSchema", {"type": "object", "properties": {}})
+        self.input_schema = tool_def.get(
+            "inputSchema", {"type": "object", "properties": {}}
+        )
 
     async def execute(self, args: dict[str, Any], ctx: Context) -> ToolResult:
         """Execute the MCP tool via the client."""

@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import pytest
-from pathlib import Path
-
 from octopus.loop.context import ConversationContext
 from octopus.loop.models import Message, Role, ToolCallDelta
 
@@ -88,7 +84,9 @@ class TestTokenEstimation:
 
     def test_tool_calls_counted(self) -> None:
         ctx = ConversationContext(session_id="test-1")
-        tc = ToolCallDelta(id="tc1", name="read_file", arguments='{"path": "/tmp/test.py"}')
+        tc = ToolCallDelta(
+            id="tc1", name="read_file", arguments='{"path": "/tmp/test.py"}'
+        )
         ctx.add_message(Message(role=Role.ASSISTANT, content=None, tool_calls=[tc]))
         # name (9) + arguments (26) = 35 chars / 4 = 8 tokens
         assert ctx.estimate_tokens() == 8
@@ -126,14 +124,18 @@ class TestSerialization:
 
     def test_roundtrip_with_tool_calls(self) -> None:
         ctx = ConversationContext(session_id="test-1")
-        tc = ToolCallDelta(id="tc1", name="read_file", arguments='{"path": "/tmp/x.py"}')
+        tc = ToolCallDelta(
+            id="tc1", name="read_file", arguments='{"path": "/tmp/x.py"}'
+        )
         ctx.add_message(Message(role=Role.ASSISTANT, content=None, tool_calls=[tc]))
-        ctx.add_message(Message(
-            role=Role.TOOL,
-            content="file contents here",
-            tool_call_id="tc1",
-            name="read_file",
-        ))
+        ctx.add_message(
+            Message(
+                role=Role.TOOL,
+                content="file contents here",
+                tool_call_id="tc1",
+                name="read_file",
+            )
+        )
 
         data = ctx.to_dict()
         restored = ConversationContext.from_dict(data)
@@ -174,7 +176,9 @@ class TestSanitization:
         ctx = ConversationContext(session_id="test-1")
         ctx.messages = [
             Message(role=Role.SYSTEM, content="System."),
-            Message(role=Role.TOOL, content="orphan result", tool_call_id="nonexistent"),
+            Message(
+                role=Role.TOOL, content="orphan result", tool_call_id="nonexistent"
+            ),
         ]
         ctx.sanitize()
         # Orphan tool result should be dropped

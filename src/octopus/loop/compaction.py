@@ -13,9 +13,7 @@ Reactive compact triggers on "prompt too long" errors.
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -530,7 +528,9 @@ class CompactionEngine:
             self.time_based_microcompact(
                 messages, MicrocompactConfig(max_turns=2, preserve_last_n=0)
             )
-            self.context_collapse(ConversationContext(session_id="temp", messages=messages))
+            self.context_collapse(
+                ConversationContext(session_id="temp", messages=messages)
+            )
             tokens_after = self._estimate_tokens(messages)
             return CompactionResult(
                 compacted=True,
@@ -562,7 +562,9 @@ class CompactionEngine:
             compacted_messages=compacted,
             original_count=len(messages),
         )
-        result.boundary = self._build_boundary(result, extracted_memories=extracted_facts)
+        result.boundary = self._build_boundary(
+            result, extracted_memories=extracted_facts
+        )
         return result
 
     def _build_extraction_prompt(self, messages: list[Message]) -> str:
@@ -580,7 +582,7 @@ class CompactionEngine:
             "Format each fact as a single line. Do NOT include:\n"
             "- Temporary debugging info\n"
             "- Obvious facts derivable from code\n"
-            "- Conversation mechanics (\"user asked me to...\")\n\n"
+            '- Conversation mechanics ("user asked me to...")\n\n'
             f"Conversation:\n{conversation}\n\n"
             "Extracted facts (one per line):"
         )
@@ -679,7 +681,9 @@ class CompactionEngine:
         return CompactBoundaryData(
             strategy=result.strategy.value if result.strategy else "unknown",
             original_count=result.original_count,
-            compacted_count=len(result.compacted_messages) if result.compacted_messages else 0,
+            compacted_count=len(result.compacted_messages)
+            if result.compacted_messages
+            else 0,
             tokens_before=result.tokens_before,
             tokens_after=result.tokens_after,
             extracted_memories=extracted_memories or [],

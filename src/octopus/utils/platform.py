@@ -64,6 +64,7 @@ def _detect_os() -> str:
 def _check_docker() -> bool:
     """Check if Docker is available."""
     import shutil
+
     return shutil.which("docker") is not None
 
 
@@ -72,6 +73,7 @@ def _check_kvm() -> bool:
     if not is_linux():
         return False
     from pathlib import Path
+
     return Path("/dev/kvm").exists()
 
 
@@ -80,4 +82,5 @@ def _default_shell(os_name: str) -> str:
     if os_name == "windows":
         return "powershell"
     import os
+
     return os.environ.get("SHELL", "/bin/bash")

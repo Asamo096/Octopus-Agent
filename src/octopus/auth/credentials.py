@@ -54,18 +54,21 @@ class CredentialStore:
     def _derive_key(self) -> bytes:
         """Derive an encryption key from machine-specific data."""
         # Combine machine-specific data
-        machine_data = "|".join([
-            platform.node(),
-            platform.machine(),
-            str(os.getuid()) if hasattr(os, "getuid") else "windows",
-            os.environ.get("USER", os.environ.get("USERNAME", "default")),
-        ])
+        machine_data = "|".join(
+            [
+                platform.node(),
+                platform.machine(),
+                str(os.getuid()) if hasattr(os, "getuid") else "windows",
+                os.environ.get("USER", os.environ.get("USERNAME", "default")),
+            ]
+        )
 
         # Hash to create a deterministic key
         key_material = hashlib.sha256(machine_data.encode()).digest()
 
         # Fernet requires a 32-byte base64-encoded key
         import base64
+
         return base64.urlsafe_b64encode(key_material)
 
     def store(self, key: str, value: str) -> None:
@@ -86,6 +89,7 @@ class CredentialStore:
         else:
             # Fallback: base64 encode (NOT secure)
             import base64
+
             encrypted = base64.b64encode(data)
 
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -126,6 +130,7 @@ class CredentialStore:
             encrypted = self._fernet.encrypt(data)
         else:
             import base64
+
             encrypted = base64.b64encode(data)
 
         self._path.write_bytes(encrypted)
@@ -148,6 +153,7 @@ class CredentialStore:
                 decrypted = self._fernet.decrypt(encrypted)
             else:
                 import base64
+
                 decrypted = base64.b64decode(encrypted)
 
             result: dict[str, str] = json.loads(decrypted)

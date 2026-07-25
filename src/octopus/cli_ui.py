@@ -24,22 +24,24 @@ if TYPE_CHECKING:
     pass
 
 # Custom theme matching claude-code's color palette
-OCTOPUS_THEME = Theme({
-    "info": "cyan",
-    "warning": "yellow",
-    "error": "bold red",
-    "success": "green",
-    "dim": "dim white",
-    "accent": "bold #00afff",
-    "tool.name": "bold cyan",
-    "tool.args": "dim white",
-    "tool.result": "dim green",
-    "separator": "dim #444444",
-    "prompt.arrow": "bold #00afff",
-    "cost": "dim #888888",
-    "model": "dim #666666",
-    "tokens": "dim #888888",
-})
+OCTOPUS_THEME = Theme(
+    {
+        "info": "cyan",
+        "warning": "yellow",
+        "error": "bold red",
+        "success": "green",
+        "dim": "dim white",
+        "accent": "bold #00afff",
+        "tool.name": "bold cyan",
+        "tool.args": "dim white",
+        "tool.result": "dim green",
+        "separator": "dim #444444",
+        "prompt.arrow": "bold #00afff",
+        "cost": "dim #888888",
+        "model": "dim #666666",
+        "tokens": "dim #888888",
+    }
+)
 
 console = Console(theme=OCTOPUS_THEME)
 
@@ -47,6 +49,7 @@ console = Console(theme=OCTOPUS_THEME)
 # ---------------------------------------------------------------------------
 # Banner
 # ---------------------------------------------------------------------------
+
 
 def display_banner(
     *,
@@ -101,6 +104,7 @@ def _shorten_model(model: str) -> str:
 # ---------------------------------------------------------------------------
 # Arrow Key Selection Menu
 # ---------------------------------------------------------------------------
+
 
 def select_option(
     options: list[str],
@@ -189,9 +193,13 @@ def select_option(
             return _build_menu_text()
 
     # Create application
-    layout = Layout(HSplit([
-        Window(content=MenuControl()),
-    ]))
+    layout = Layout(
+        HSplit(
+            [
+                Window(content=MenuControl()),
+            ]
+        )
+    )
 
     app = Application(
         layout=layout,
@@ -210,6 +218,7 @@ def select_option(
 # Separator & Prompt
 # ---------------------------------------------------------------------------
 
+
 def print_separator() -> None:
     """Print a full-width separator line."""
     console.print("─" * console.width, style="separator")
@@ -224,9 +233,11 @@ def print_prompt_arrow() -> None:
 # Tool Call Rendering
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ToolCallDisplay:
     """Tracks a tool call for display purposes."""
+
     name: str
     arguments: str
     start_time: float = field(default_factory=time.monotonic)
@@ -261,7 +272,9 @@ def print_tool_call_start(name: str, arguments: str) -> ToolCallDisplay:
     # Format arguments for display
     args_display = _format_tool_args(arguments)
 
-    console.print(f"[dim]┌[/] [tool.name]{name}[/]([tool.args]{args_display}[/])", highlight=False)
+    console.print(
+        f"[dim]┌[/] [tool.name]{name}[/]([tool.args]{args_display}[/])", highlight=False
+    )
     return tc
 
 
@@ -303,9 +316,7 @@ def print_tool_call_result(
             _render_tool_output(tool_name or tc.name, result, args or tc.arguments)
 
 
-def _render_tool_output(
-    tool_name: str, output: str, args: str | None = None
-) -> None:
+def _render_tool_output(tool_name: str, output: str, args: str | None = None) -> None:
     """Render tool output with per-tool-type styling.
 
     - bash/shell: dim panel with command as title
@@ -363,7 +374,39 @@ def _render_tool_output(
     elif name_lower in ("read", "file_read", "read_file"):
         if file_path:
             ext = file_path.rsplit(".", 1)[-1].lower() if "." in file_path else ""
-            if ext in ("py", "python", "js", "ts", "jsx", "tsx", "rs", "go", "rb", "java", "c", "cpp", "h", "hpp", "css", "html", "json", "yaml", "yml", "toml", "sh", "bash", "zsh", "sql", "md", "xml", "swift", "kt", "scala", "lua", "r"):
+            if ext in (
+                "py",
+                "python",
+                "js",
+                "ts",
+                "jsx",
+                "tsx",
+                "rs",
+                "go",
+                "rb",
+                "java",
+                "c",
+                "cpp",
+                "h",
+                "hpp",
+                "css",
+                "html",
+                "json",
+                "yaml",
+                "yml",
+                "toml",
+                "sh",
+                "bash",
+                "zsh",
+                "sql",
+                "md",
+                "xml",
+                "swift",
+                "kt",
+                "scala",
+                "lua",
+                "r",
+            ):
                 try:
                     from rich.syntax import Syntax
 
@@ -380,7 +423,9 @@ def _render_tool_output(
         # Fallback: dim panel
         truncated = _truncate(output, max_lines)
         console.print(
-            Panel(truncated, title=file_path or "read", border_style="dim", expand=False),
+            Panel(
+                truncated, title=file_path or "read", border_style="dim", expand=False
+            ),
             highlight=False,
         )
 
@@ -449,6 +494,7 @@ def _format_tool_args(arguments: str, max_len: int = 60) -> str:
 # Message Rendering
 # ---------------------------------------------------------------------------
 
+
 def print_assistant_text(text: str) -> None:
     """Print assistant response text with markdown rendering."""
     if not text.strip():
@@ -513,9 +559,11 @@ def print_status(message: str) -> None:
 # Status Line (post-turn)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class TurnStats:
     """Statistics for a single turn."""
+
     input_tokens: int = 0
     output_tokens: int = 0
     cache_read_tokens: int = 0
@@ -578,6 +626,7 @@ def _format_token_count(count: int) -> str:
 # Slash Command Help
 # ---------------------------------------------------------------------------
 
+
 def print_help() -> None:
     """Print help text for slash commands."""
     help_text = """### Commands
@@ -617,6 +666,7 @@ def print_help() -> None:
 # ---------------------------------------------------------------------------
 # Spinner (simple text-based)
 # ---------------------------------------------------------------------------
+
 
 class ThinkingSpinner:
     """Simple thinking indicator for processing states."""
@@ -681,4 +731,7 @@ def print_status_bar(permission_mode: str = "default") -> None:
     hint = mode_info["hint"]
 
     # Print status bar
-    console.print(f"\n[{color}]{icon}[/{color}] [{color}]{label}[/{color}] [dim]· {hint} · ← for agents[/dim]", highlight=False)
+    console.print(
+        f"\n[{color}]{icon}[/{color}] [{color}]{label}[/{color}] [dim]· {hint} · ← for agents[/dim]",
+        highlight=False,
+    )
