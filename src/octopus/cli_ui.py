@@ -68,23 +68,21 @@ def display_banner(
     for line in logo:
         console.print(f"[accent]{line}[/]")
 
-    # Info line — model | auth | permission
-    model_short = _shorten_model(model)
-    auth_status = "api-key"  # TODO: detect OAuth vs API key
+    # Info line — MODEL | PERMISSION
+    model_display = _shorten_model(model) if model else "(none)"
     info_parts = [
-        f"model: [info]{model_short}[/]",
-        f"auth: [dim]{auth_status}[/]",
-        f"permission: [info]{permission_mode}[/]",
+        f"MODEL: [info]{model_display}[/]",
+        f"PERMISSION: [info]{permission_mode}[/]",
     ]
     console.print(" | ".join(info_parts))
 
-    # Workspace
+    # PATH
     if workspace:
-        console.print(f"cwd: [dim]{workspace}[/]")
+        console.print(f"PATH: [dim]{workspace}[/]")
 
-    # Session
+    # SESSION
     if session_id:
-        console.print(f"session: [dim]{session_id[:8]}[/]")
+        console.print(f"SESSION: [dim]{session_id}[/]")
 
     console.print()
 

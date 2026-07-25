@@ -74,11 +74,27 @@ def cli(
         "-p",
         help="Permission mode: default, plan, full_auto",
     ),
+    continue_session: str | None = typer.Option(
+        None,
+        "--continue",
+        "-c",
+        help="Resume a previous session by ID",
+    ),
 ) -> None:
     """Enter CLI interactive mode or run a single prompt."""
-    from octopus.cli_runtime import run_interactive_async, run_single_prompt_async
+    from octopus.cli_runtime import (
+        run_interactive_async,
+        run_single_prompt_async,
+        session_resume_async,
+    )
 
-    if prompt:
+    if continue_session:
+        _run_async(
+            session_resume_async(
+                continue_session, model=model, permission_mode=permission_mode
+            )
+        )
+    elif prompt:
         display_banner(model=model, permission_mode=permission_mode)
         console.print(f"[bold]>[/] {prompt}")
         console.print()
