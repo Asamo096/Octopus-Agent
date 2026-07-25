@@ -200,6 +200,7 @@ async def run_interactive_async(
             except (EOFError, KeyboardInterrupt):
                 console.print("\n[dim]Goodbye![/]")
                 break
+            console.print(separator)
 
             if not user_input.strip():
                 continue
@@ -209,7 +210,6 @@ async def run_interactive_async(
                     break
                 continue
 
-            console.print(separator)
             console.print()
 
             conversation.add_message(Message(role=Role.USER, content=user_input))
