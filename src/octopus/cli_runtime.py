@@ -297,6 +297,46 @@ async def run_single_prompt_async(
         await kernel.shutdown()
 
 
+def _display_loaded_messages(conversation: ConversationContext) -> None:
+    """Display loaded conversation messages after session resume."""
+    from octopus.cli_ui import print_assistant_markdown
+
+    # Skip system message
+    messages = [m for m in conversation.messages if m.role.value != "system"]
+
+    if not messages:
+        return
+
+    console.print()
+    console.print("[dim]--- Previous conversation ---[/]")
+    console.print()
+
+    for msg in messages:
+        if msg.role.value == "user":
+            console.print(f"[bold]>[/] {msg.content}")
+            console.print()
+        elif msg.role.value == "assistant":
+            if msg.content:
+                # Strip XML artifacts before displaying
+                import re
+
+                text = msg.content
+                text = re.sub(r"<tool_call>.*?</tool_call>", "", text, flags=re.DOTALL)
+                text = re.sub(r"<function=.*?>.*?</function>", "", text, flags=re.DOTALL)
+                text = re.sub(r"<thinking>.*?</thinking>", "", text, flags=re.DOTALL)
+                text = re.sub(r"<tool_result>.*?</tool_result>", "", text, flags=re.DOTALL)
+                text = text.strip()
+                if text:
+                    print_assistant_markdown(text)
+                    console.print()
+        elif msg.role.value == "tool":
+            # Skip tool results in display
+            pass
+
+    console.print("[dim]--- End of previous conversation ---[/]")
+    console.print()
+
+
 async def run_interactive_async(
     *,
     model: str | None = None,
@@ -353,6 +393,8 @@ async def run_interactive_async(
                 print_info(
                     f"Resumed session {resume_session[:8]} ({len(conversation.messages)} messages)"
                 )
+                # Display loaded messages
+                _display_loaded_messages(conversation)
             else:
                 print_warning(f"Session {resume_session} not found, starting new.")
 
