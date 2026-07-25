@@ -223,14 +223,32 @@ async def _execute_tool(
             success=False, output=None, error=f"Invalid JSON arguments: {tc.arguments}"
         )
 
-    tool = registry.get(tc.name)
+    # Map common tool name variations to registered names
+    _TOOL_NAME_MAP = {
+        "execute_shell": "shell",
+        "execute_command": "shell",
+        "run_command": "shell",
+        "bash": "shell",
+        "execute_block": "shell",
+        "read_file": "read",
+        "file_read": "read",
+        "write_file": "write",
+        "file_write": "write",
+        "edit_file": "edit",
+        "file_edit": "edit",
+        "search_files": "grep",
+        "find_files": "glob",
+    }
+    tool_name = _TOOL_NAME_MAP.get(tc.name, tc.name)
+
+    tool = registry.get(tool_name)
     if tool is None:
         return ToolResult(
             success=False, output=None, error=f"Tool not found: {tc.name}"
         )
 
     # Create ToolCall for the kernel
-    tool_call = ToolCall(tool_name=tc.name, arguments=args, call_id=tc.id)
+    tool_call = ToolCall(tool_name=tool_name, arguments=args, call_id=tc.id)
 
     # Execute through the kernel's harness pipeline
     return await kernel.execute_tool(tool_call, ctx)
