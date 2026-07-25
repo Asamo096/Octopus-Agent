@@ -265,47 +265,6 @@ async def _execute_tool(
     return await kernel.execute_tool(tool_call, ctx)
 
 
-def _parse_xml_tool_calls(text: str) -> list[ToolCallDelta]:
-    """Parse XML-formatted tool calls from model output.
-
-    Handles format:
-        <tool_call>
-        <tool_name>name</tool_name>
-        <arguments>{"key": "value"}</arguments>
-        </tool_call>
-    """
-    import re
-
-    pattern = r"<tool_call>\s*(.*?)\s*</tool_call>"
-    matches = re.findall(pattern, text, re.DOTALL)
-
-    calls: list[ToolCallDelta] = []
-    for i, block in enumerate(matches):
-        # Extract tool name
-        name_match = re.search(r"<tool_name>\s*(.*?)\s*</tool_name>", block, re.DOTALL)
-        if not name_match:
-            continue
-        tool_name = name_match.group(1).strip()
-
-        # Extract arguments (JSON string)
-        args_match = re.search(r"<arguments>\s*(.*?)\s*</arguments>", block, re.DOTALL)
-        args_str = args_match.group(1).strip() if args_match else "{}"
-
-        # Validate JSON
-        try:
-            json.loads(args_str)
-        except json.JSONDecodeError:
-            args_str = "{}"
-
-        calls.append(ToolCallDelta(
-            id=f"xml_call_{i}",
-            name=tool_name,
-            arguments=args_str,
-        ))
-
-    return calls
-
-
 def _parse_code_block_calls(text: str) -> list[ToolCallDelta]:
     """Parse bash/shell code blocks as shell tool calls.
 
