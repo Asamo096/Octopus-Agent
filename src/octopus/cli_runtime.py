@@ -195,12 +195,13 @@ async def run_interactive_async(
 
         while True:
             console.print(separator)
+            console.print("[bold cyan]❯[/]")
+            console.print(separator)
             try:
-                user_input = console.input("[bold cyan]❯[/] ")
+                user_input = console.input()
             except (EOFError, KeyboardInterrupt):
                 console.print("\n[dim]Goodbye![/]")
                 break
-            console.print(separator)
 
             if not user_input.strip():
                 continue
