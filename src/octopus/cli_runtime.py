@@ -127,18 +127,26 @@ async def _setup_runtime(
     register_search_tools(registry, kernel)
 
     # Load provider config from auth.json + config.toml
+    import os
+
     config = load_config()
     auth = load_auth()
 
-    # Find the provider with a non-empty base_url (there may be multiple entries;
-    # model_provider is the litellm prefix, but base_url may be on another entry)
+    # Set provider-specific API key env vars for litellm
+    # litellm uses env vars like XIAOMI_MIMO_API_KEY, OPENAI_API_KEY, etc.
+    api_key = auth.openai_api_key
+    if api_key and config.model_provider:
+        env_key = f"{config.model_provider.upper()}_API_KEY"
+        os.environ[env_key] = api_key
+
+    # Find base_url from provider config (for custom/unrecognized providers)
     base_url: str | None = None
     for p in config.model_providers.values():
         if p.base_url:
             base_url = p.base_url
             break
 
-    provider = LiteLLMProvider(api_key=auth.openai_api_key, base_url=base_url)
+    provider = LiteLLMProvider(api_key=api_key, base_url=base_url)
 
     ctx = Context(
         session_id=str(uuid.uuid4()),
