@@ -410,19 +410,36 @@ async def run_interactive_async(
             _interrupt_requested = True
 
         # Set up slash command completer
-        from prompt_toolkit.completion import WordCompleter
+        from prompt_toolkit.completion import Completer, Completion
 
         from octopus.cli_ui import SLASH_COMMANDS
 
-        slash_completer = WordCompleter(
-            [cmd["name"] for cmd in SLASH_COMMANDS],
-            meta_dict={cmd["name"]: cmd["description"] for cmd in SLASH_COMMANDS},
-            ignore_case=True,
-        )
+        class SlashCompleter(Completer):
+            """Custom completer for slash commands that filters as user types."""
+
+            def get_completions(self, document: object, complete_event: object) -> list:
+                text = document.text  # type: ignore
+                # Only complete if input starts with /
+                if not text.startswith("/"):
+                    return []
+                completions = []
+                for cmd in SLASH_COMMANDS:
+                    name = cmd["name"]
+                    desc = cmd["description"]
+                    # Match if command starts with typed text
+                    if name.startswith(text) or text in desc.lower():
+                        completions.append(
+                            Completion(
+                                name,
+                                start_position=-len(text),
+                                display_meta=desc,
+                            )
+                        )
+                return completions
 
         pt_session: PromptSession[str] = PromptSession(
             key_bindings=kb,
-            completer=slash_completer,
+            completer=SlashCompleter(),
             complete_while_typing=True,
         )
 
