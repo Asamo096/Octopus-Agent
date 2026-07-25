@@ -58,6 +58,12 @@ SYSTEM_PROMPT = (
 )
 
 
+def _has_markdown(text: str) -> bool:
+    """Check if text likely contains markdown formatting."""
+    indicators = ["```", "## ", "### ", "- ", "* ", "1. ", "**", "__", "> ", "| "]
+    return any(ind in text for ind in indicators)
+
+
 def _resolve_model(model_arg: str | None) -> str | None:
     """Resolve model from argument, then config, then None.
 
@@ -375,13 +381,16 @@ async def run_interactive_async(
             if current_tool is not None:
                 print_tool_call_result(current_tool, "")
 
-            # Re-render full response as markdown (OpenHarness pattern:
-            # stream raw tokens first for responsiveness, then re-render
-            # with proper markdown formatting after turn completes)
+            # Re-render as markdown only if response contains markdown
+            # (OpenHarness pattern: stream raw for responsiveness, then
+            # re-render with markdown formatting when needed)
             if collected_text:
                 full_text = "".join(collected_text)
-                print_stream_newline()
-                print_assistant_markdown(full_text)
+                if _has_markdown(full_text):
+                    print_stream_newline()
+                    print_assistant_markdown(full_text)
+                else:
+                    print_stream_newline()
 
             # Print turn status line
             duration_ms = int((time.monotonic() - turn_start) * 1000)
