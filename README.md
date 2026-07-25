@@ -1,4 +1,4 @@
-# 🐙 Octopus Agent
+# Octopus Agent
 
 Desktop + CLI dual AI coding & general-purpose agent client with **harness governance**.
 
@@ -281,10 +281,10 @@ octopus session new        # Start a new session
 
 | Phase | Status | Content |
 |-------|--------|---------|
-| Phase 1 (Weeks 1-4) | ✅ Complete | Kernel, agent loop, tools, CLI |
-| Phase 2 (Weeks 5-8) | ✅ Complete | Config, providers, Tauri GUI, IPC bridge |
-| Phase 3 (Weeks 9-14) | ✅ Complete | Rollback engine, plugin system |
-| Phase 4 (Weeks 15-20) | ✅ Complete | Context, compaction, memory, hooks, multi-agent, sandbox, auth, MCP |
+| Phase 1 (Weeks 1-4) | Complete | Kernel, agent loop, tools, CLI |
+| Phase 2 (Weeks 5-8) | Complete | Config, providers, Tauri GUI, IPC bridge |
+| Phase 3 (Weeks 9-14) | Complete | Rollback engine, plugin system |
+| Phase 4 (Weeks 15-20) | Complete | Context, compaction, memory, hooks, multi-agent, sandbox, auth, MCP |
 
 ## License
 

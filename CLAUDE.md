@@ -255,13 +255,14 @@ octopus session resume <id> # Resume a session
 
 ## Development Guidelines
 
-1. **Async-first**: All agent operations use async/await. Use `asyncio.gather` for parallel tool execution.
-2. **Pydantic everywhere**: All config, messages, tool inputs use Pydantic v2 models.
-3. **Type hints**: Full type annotations. Run mypy in CI.
-4. **Ruff formatting**: Use ruff for linting and formatting (configured in pyproject.toml).
-5. **Protocol-based abstractions**: Use Python Protocol for tool, provider, and agent interfaces.
-6. **Harness-first**: Every new tool or capability must pass through the kernel's permission + audit pipeline.
-7. **Test before merge**: All PRs require passing tests and type checks.
+1. **No emoji**: The entire project must not use emoji characters. No emoji in source code, comments, docstrings, CLI output, commit messages, or documentation. Use plain ASCII text only.
+2. **Async-first**: All agent operations use async/await. Use `asyncio.gather` for parallel tool execution.
+3. **Pydantic everywhere**: All config, messages, tool inputs use Pydantic v2 models.
+4. **Type hints**: Full type annotations. Run mypy in CI.
+5. **Ruff formatting**: Use ruff for linting and formatting (configured in pyproject.toml).
+6. **Protocol-based abstractions**: Use Python Protocol for tool, provider, and agent interfaces.
+7. **Harness-first**: Every new tool or capability must pass through the kernel's permission + audit pipeline.
+8. **Test before merge**: All PRs require passing tests and type checks.
 
 ---
 

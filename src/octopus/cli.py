@@ -12,7 +12,7 @@ from octopus import __version__
 
 app = typer.Typer(
     name="octopus",
-    help="🐙 Octopus Agent — AI coding assistant with harness governance",
+    help="Octopus Agent -- AI coding assistant with harness governance",
     no_args_is_help=True,
 )
 console = Console()
@@ -57,7 +57,7 @@ def main(
         help="Show version and exit.",
     ),
 ) -> None:
-    """🐙 Octopus Agent — Desktop + CLI dual AI coding assistant with harness governance."""
+    """Octopus Agent — Desktop + CLI dual AI coding assistant with harness governance."""
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +82,7 @@ def cli(
     if prompt:
         display_banner()
         console.print(
-            Panel(f"[bold]Prompt:[/] {prompt}", title="🐙 Octopus", border_style="blue")
+            Panel(f"[bold]Prompt:[/] {prompt}", title="Octopus", border_style="blue")
         )
         _run_async(
             run_single_prompt_async(
@@ -96,7 +96,7 @@ def cli(
                 "[bold green]Interactive Mode[/]\n"
                 "Type your message and press Enter.\n"
                 "Commands: [cyan]/help[/] [cyan]/clear[/] [cyan]/reset[/] [cyan]/tokens[/] [cyan]/exit[/]",
-                title="🐙 Octopus",
+                title="Octopus",
                 border_style="blue",
             )
         )
@@ -182,7 +182,7 @@ def config(
         state = StateManager(db_path=_get_db_path())
         try:
             await state.set_value(f"config.{key}", value)
-            console.print(f"[green]✓[/] {key} = {value}")
+            console.print(f"[green]OK[/] {key} = {value}")
         finally:
             await state.close()
 
@@ -241,7 +241,7 @@ def provider(
                 console.print(f"[red]Provider '{name}' not found. Use 'provider add' first.[/]")
                 raise typer.Exit(code=1)
             await state.set_value("config.default_provider", name)
-            console.print(f"[green]✓[/] Default provider set to: {name}")
+            console.print(f"[green]OK[/] Default provider set to: {name}")
         finally:
             await state.close()
 
@@ -259,7 +259,7 @@ def provider(
                 "model": model,
             }
             await state.set_value("config.providers", providers)
-            console.print(f"[green]✓[/] Added provider: {name}")
+            console.print(f"[green]OK[/] Added provider: {name}")
         finally:
             await state.close()
 
@@ -366,13 +366,13 @@ def permissions(
                 if pattern not in paths:
                     paths.append(pattern)
                     await state.set_value("permissions.allowed_paths", paths)
-                console.print(f"[green]✓[/] Added allowed path: {pattern}")
+                console.print(f"[green]OK[/] Added allowed path: {pattern}")
             elif rule_type == "command":
                 cmds = await state.get_value("permissions.safe_commands", [])
                 if pattern not in cmds:
                     cmds.append(pattern)
                     await state.set_value("permissions.safe_commands", cmds)
-                console.print(f"[green]✓[/] Added safe command: {pattern}")
+                console.print(f"[green]OK[/] Added safe command: {pattern}")
             else:
                 console.print(f"[red]Unknown rule type: {rule_type}[/]")
                 raise typer.Exit(code=1)
@@ -390,13 +390,13 @@ def permissions(
                 if pattern in paths:
                     paths.remove(pattern)
                     await state.set_value("permissions.allowed_paths", paths)
-                console.print(f"[green]✓[/] Removed allowed path: {pattern}")
+                console.print(f"[green]OK[/] Removed allowed path: {pattern}")
             elif rule_type == "command":
                 cmds = await state.get_value("permissions.safe_commands", [])
                 if pattern in cmds:
                     cmds.remove(pattern)
                     await state.set_value("permissions.safe_commands", cmds)
-                console.print(f"[green]✓[/] Removed safe command: {pattern}")
+                console.print(f"[green]OK[/] Removed safe command: {pattern}")
             else:
                 console.print(f"[red]Unknown rule type: {rule_type}[/]")
                 raise typer.Exit(code=1)

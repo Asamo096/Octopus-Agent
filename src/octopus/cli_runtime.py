@@ -132,7 +132,7 @@ async def run_single_prompt_async(
                 # Show tool call indicator
                 tc = event.tool_call
                 if tc:
-                    console.print(f"\n[dim]⚙ Tool: {tc.name}[/]", highlight=False)
+                    console.print(f"\n[dim]>>> Tool: {tc.name}[/]", highlight=False)
             elif event.type == StreamEventType.ERROR:
                 console.print(f"\n[red]Error: {event.error}[/]")
             elif event.type == StreamEventType.DONE:
@@ -233,7 +233,7 @@ async def run_interactive_async(
                             else tc.arguments
                         )
                         console.print(
-                            f"\n[dim]⚙ {tc.name}({args_preview})[/]", highlight=False
+                            f"\n[dim]>>> {tc.name}({args_preview})[/]", highlight=False
                         )
                 elif event.type == StreamEventType.STATUS:
                     console.print(f"\n[dim]{event.text}[/]", highlight=False)
@@ -431,11 +431,11 @@ async def code_init_async(path: str) -> None:
             f"  allowed_paths:\n"
             f"    - {ws}/**\n"
         )
-        console.print(f"[green]✓[/] Created {config_path}")
+        console.print(f"[green]OK[/] Created {config_path}")
     else:
         console.print(f"[dim]Config already exists at {config_path}[/]")
 
     # Create audit db
     db_path = _get_db_path()
-    console.print(f"[green]✓[/] Workspace initialized at {ws}")
+    console.print(f"[green]OK[/] Workspace initialized at {ws}")
     console.print(f"[dim]Database: {db_path}[/]")
