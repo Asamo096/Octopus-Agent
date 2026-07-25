@@ -434,6 +434,8 @@ def _strip_model_artifacts(text: str) -> str:
     text = re.sub(r"<\|.*?\|>", "", text)
     # Strip <think>...</think> blocks
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    # Strip tool_result blocks
+    text = re.sub(r"<tool_result>.*?</tool_result>", "", text, flags=re.DOTALL)
     # Strip stray code block markers
     text = re.sub(r"```(?:\w+)?", "", text)
     # Clean up extra whitespace

@@ -544,6 +544,9 @@ async def run_interactive_async(
                 full_text = re.sub(
                     r"<thinking>.*?</thinking>", "", full_text, flags=re.DOTALL
                 )
+                full_text = re.sub(
+                    r"<tool_result>.*?</tool_result>", "", full_text, flags=re.DOTALL
+                )
                 full_text = re.sub(r"<\|.*?\|>", "", full_text)
                 full_text = full_text.strip()
                 if full_text:
