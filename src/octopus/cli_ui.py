@@ -215,6 +215,140 @@ def select_option(
 
 
 # ---------------------------------------------------------------------------
+# Slash Command Autocomplete
+# ---------------------------------------------------------------------------
+
+# Available slash commands with descriptions
+SLASH_COMMANDS: list[dict[str, str]] = [
+    {"name": "/help", "description": "Show available commands"},
+    {"name": "/model", "description": "Fetch and select model from provider"},
+    {"name": "/config", "description": "Show or edit configuration"},
+    {"name": "/config show", "description": "Show current configuration"},
+    {"name": "/config set model", "description": "Set model name"},
+    {"name": "/config set provider", "description": "Set provider name"},
+    {"name": "/config set base_url", "description": "Set provider base URL"},
+    {"name": "/config set api_key", "description": "Set API key"},
+    {"name": "/tokens", "description": "Show estimated token count"},
+    {"name": "/cost", "description": "Show session cost"},
+    {"name": "/compact", "description": "Force conversation compaction"},
+    {"name": "/reset", "description": "Reset conversation history"},
+    {"name": "/clear", "description": "Clear screen"},
+    {"name": "/exit", "description": "Exit interactive mode"},
+]
+
+
+def slash_autocomplete() -> str | None:
+    """Show slash command autocomplete with arrow key navigation.
+
+    Returns the selected command string, or None if cancelled.
+    """
+    from prompt_toolkit.key_binding import KeyBindings
+
+    # Filter commands based on input
+    filter_text = ""
+    selected_index = 0
+    result: str | None = None
+
+    def _get_filtered_commands() -> list[dict[str, str]]:
+        if not filter_text:
+            return SLASH_COMMANDS
+        return [
+            cmd for cmd in SLASH_COMMANDS
+            if cmd["name"].startswith(filter_text)
+               or filter_text in cmd["description"].lower()
+        ]
+
+    kb = KeyBindings()
+
+    @kb.add("up")
+    def _move_up(event: object) -> None:
+        nonlocal selected_index
+        filtered = _get_filtered_commands()
+        if filtered:
+            selected_index = (selected_index - 1) % len(filtered)
+
+    @kb.add("down")
+    def _move_down(event: object) -> None:
+        nonlocal selected_index
+        filtered = _get_filtered_commands()
+        if filtered:
+            selected_index = (selected_index + 1) % len(filtered)
+
+    @kb.add("enter")
+    def _confirm(event: object) -> None:
+        nonlocal result
+        filtered = _get_filtered_commands()
+        if filtered and 0 <= selected_index < len(filtered):
+            result = filtered[selected_index]["name"]
+        event.app.exit(result=result)  # type: ignore
+
+    @kb.add("escape")
+    @kb.add("c-c")
+    def _cancel(event: object) -> None:
+        event.app.exit(result=None)  # type: ignore
+
+    # Handle backspace to update filter
+    @kb.add("backspace")
+    def _backspace(event: object) -> None:
+        nonlocal filter_text, selected_index
+        if filter_text:
+            filter_text = filter_text[:-1]
+            selected_index = 0
+
+    # Handle regular characters for filtering
+    @kb.add("any")
+    def _char(event: object) -> None:
+        nonlocal filter_text, selected_index
+        # Get the key pressed
+        key_event = event.key_sequence[0]  # type: ignore
+        if hasattr(key_event, 'key') and hasattr(key_event.key, 'data'):
+            ch = key_event.key.data
+            if ch and len(ch) == 1 and ch.isprintable():
+                filter_text += ch
+                selected_index = 0
+
+    # Build the menu display
+    def _build_menu_text() -> str:
+        filtered = _get_filtered_commands()
+        lines = ["", "  Commands:"]
+        if filter_text:
+            lines[0] = f"  Filter: {filter_text}"
+        for i, cmd in enumerate(filtered):
+            if i == selected_index:
+                lines.append(f"  > {cmd['name']:<25} {cmd['description']}")
+            else:
+                lines.append(f"    {cmd['name']:<25} {cmd['description']}")
+        lines.append("")
+        lines.append("  [up/down] Navigate  [enter] Confirm  [esc] Cancel  [type] Filter")
+        return "\n".join(lines)
+
+    # Use Application for proper terminal handling
+    from prompt_toolkit.application import Application
+    from prompt_toolkit.layout import Layout
+    from prompt_toolkit.layout.containers import HSplit, Window
+    from prompt_toolkit.layout.controls import FormattedTextControl
+
+    class MenuControl(FormattedTextControl):
+        def __init__(self) -> None:
+            super().__init__(self._get_text)
+
+        def _get_text(self) -> str:
+            return _build_menu_text()
+
+    layout = Layout(HSplit([Window(content=MenuControl())]))
+
+    app: Application = Application(
+        layout=layout,
+        key_bindings=kb,
+        full_screen=False,
+        erase_when_done=True,
+    )
+
+    app.run()
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Separator & Prompt
 # ---------------------------------------------------------------------------
 
