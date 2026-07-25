@@ -13,10 +13,10 @@ import uuid
 from pathlib import Path
 
 from octopus.cli_ui import (
-    ToolCallDisplay,
     TurnStats,
     console,
     display_banner,
+    print_assistant_markdown,
     print_assistant_text_stream,
     print_error,
     print_help,
@@ -27,7 +27,6 @@ from octopus.cli_ui import (
     print_status_line,
     print_stream_newline,
     print_success,
-    print_tool_call_output,
     print_tool_call_result,
     print_tool_call_start,
     print_warning,
@@ -376,8 +375,13 @@ async def run_interactive_async(
             if current_tool is not None:
                 print_tool_call_result(current_tool, "")
 
+            # Re-render full response as markdown (OpenHarness pattern:
+            # stream raw tokens first for responsiveness, then re-render
+            # with proper markdown formatting after turn completes)
             if collected_text:
+                full_text = "".join(collected_text)
                 print_stream_newline()
+                print_assistant_markdown(full_text)
 
             # Print turn status line
             duration_ms = int((time.monotonic() - turn_start) * 1000)

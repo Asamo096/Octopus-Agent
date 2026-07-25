@@ -242,6 +242,21 @@ def print_assistant_text_stream(text: str) -> None:
     console.print(text, end="", highlight=False)
 
 
+def print_assistant_markdown(text: str) -> None:
+    """Re-render full assistant response as markdown after streaming.
+
+    This follows the OpenHarness pattern: stream raw tokens first for
+    responsiveness, then re-render with proper markdown formatting.
+    """
+    if not text.strip():
+        return
+
+    # Clear the streamed raw text by moving cursor up and re-rendering
+    # Rich's Markdown handles code blocks, headers, lists, tables, etc.
+    md = Markdown(text)
+    console.print(md)
+
+
 def print_stream_newline() -> None:
     """Print a newline after streaming completes."""
     console.print()
