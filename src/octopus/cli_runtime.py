@@ -163,17 +163,6 @@ async def run_single_prompt_async(
                 if tc:
                     tool_call_count += 1
                     print_tool_call_start(tc.name, tc.arguments)
-            elif event.type == StreamEventType.TOOL_RESULT:
-                tr = event.tool_result
-                if tr:
-                    is_error = tr.is_error if hasattr(tr, "is_error") else False
-                    result_text = tr.output if hasattr(tr, "output") else str(tr)
-                    # Create a temporary ToolCallDisplay for result display
-                    temp_tc = ToolCallDisplay(name="tool", arguments="")
-                    temp_tc.start_time = turn_start
-                    print_tool_call_result(temp_tc, result_text, is_error=is_error)
-                    if result_text and not is_error:
-                        print_tool_call_output(result_text)
             elif event.type == StreamEventType.STATUS:
                 print_status(event.text or "")
             elif event.type == StreamEventType.ERROR:
@@ -332,16 +321,6 @@ async def run_interactive_async(
                         # Print new tool with newline prefix
                         console.print()
                         current_tool = print_tool_call_start(tc.name, tc.arguments)
-
-                elif event.type == StreamEventType.TOOL_RESULT:
-                    tr = event.tool_result
-                    if tr and current_tool is not None:
-                        is_error = getattr(tr, "is_error", False)
-                        result_text = getattr(tr, "output", str(tr))
-                        print_tool_call_result(current_tool, result_text, is_error=is_error)
-                        if result_text and not is_error:
-                            print_tool_call_output(result_text)
-                        current_tool = None
 
                 elif event.type == StreamEventType.STATUS:
                     print_status(event.text or "")
