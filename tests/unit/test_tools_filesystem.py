@@ -58,7 +58,9 @@ class TestWriteFileTool:
 
     async def test_write_creates_dirs(self, ctx: Context, tmp_path: Path) -> None:
         tool = WriteFileTool()
-        result = await tool.execute({"path": "sub/dir/file.txt", "content": "deep"}, ctx)
+        result = await tool.execute(
+            {"path": "sub/dir/file.txt", "content": "deep"}, ctx
+        )
         assert result.success
         assert (tmp_path / "sub" / "dir" / "file.txt").read_text() == "deep"
 
@@ -91,7 +93,9 @@ class TestEditFileTool:
         assert not result.success
         assert "not found" in (result.error or "").lower()
 
-    async def test_edit_multiple_occurrences_fails(self, ctx: Context, tmp_path: Path) -> None:
+    async def test_edit_multiple_occurrences_fails(
+        self, ctx: Context, tmp_path: Path
+    ) -> None:
         (tmp_path / "f.py").write_text("aaa\naaa\n")
         tool = EditFileTool()
         result = await tool.execute(

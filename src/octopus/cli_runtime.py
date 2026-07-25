@@ -5,21 +5,16 @@ This module bridges the synchronous Typer CLI with the async agent loop.
 
 from __future__ import annotations
 
-import asyncio
 import json
-import os
 import uuid
 from pathlib import Path
-from typing import Any, List, Optional
 
 from rich.console import Console
-from rich.live import Live
 from rich.markdown import Markdown
-from rich.text import Text
 
-from octopus.core.kernel import Context, Kernel, PermissionMode, ToolCall
+from octopus.core.kernel import Context, Kernel, PermissionMode
 from octopus.loop.engine import run_query
-from octopus.loop.models import Message, Role, StreamEvent, StreamEventType
+from octopus.loop.models import Message, Role, StreamEventType
 from octopus.providers.litellm_adapter import LiteLLMProvider
 from octopus.tools.base import ToolRegistry
 from octopus.tools.filesystem import register_filesystem_tools
@@ -57,9 +52,9 @@ def _resolve_permission_mode(mode_str: str) -> PermissionMode:
 
 async def _setup_runtime(
     *,
-    model: Optional[str] = None,
+    model: str | None = None,
     permission_mode: str = "default",
-    workspace: Optional[Path] = None,
+    workspace: Path | None = None,
 ) -> tuple[Kernel, ToolRegistry, LiteLLMProvider, Context]:
     """Set up kernel, registry, provider, and context."""
     ws = workspace or Path.cwd()
@@ -88,23 +83,28 @@ async def _setup_runtime(
 async def run_single_prompt_async(
     prompt: str,
     *,
-    model: Optional[str] = None,
+    model: str | None = None,
     permission_mode: str = "default",
 ) -> None:
     """Run a single prompt and print the response."""
     kernel, registry, provider, ctx = await _setup_runtime(
-        model=model, permission_mode=permission_mode,
+        model=model,
+        permission_mode=permission_mode,
     )
 
     try:
-        messages: List[Message] = [
+        messages: list[Message] = [
             Message(role=Role.SYSTEM, content=SYSTEM_PROMPT),
             Message(role=Role.USER, content=prompt),
         ]
 
         collected: list[str] = []
         async for event in run_query(
-            messages, provider, kernel, registry, ctx,
+            messages,
+            provider,
+            kernel,
+            registry,
+            ctx,
             model=model or DEFAULT_MODEL,
         ):
             if event.type == StreamEventType.TEXT:
@@ -130,15 +130,16 @@ async def run_single_prompt_async(
 
 async def run_interactive_async(
     *,
-    model: Optional[str] = None,
+    model: str | None = None,
     permission_mode: str = "default",
 ) -> None:
     """Run the interactive chat loop."""
     kernel, registry, provider, ctx = await _setup_runtime(
-        model=model, permission_mode=permission_mode,
+        model=model,
+        permission_mode=permission_mode,
     )
 
-    messages: List[Message] = [
+    messages: list[Message] = [
         Message(role=Role.SYSTEM, content=SYSTEM_PROMPT),
     ]
 
@@ -165,7 +166,11 @@ async def run_interactive_async(
 
             collected: list[str] = []
             async for event in run_query(
-                messages, provider, kernel, registry, ctx,
+                messages,
+                provider,
+                kernel,
+                registry,
+                ctx,
                 model=model or DEFAULT_MODEL,
             ):
                 if event.type == StreamEventType.TEXT:
@@ -174,8 +179,14 @@ async def run_interactive_async(
                 elif event.type == StreamEventType.TOOL_CALL:
                     tc = event.tool_call
                     if tc:
-                        args_preview = tc.arguments[:80] + "..." if len(tc.arguments) > 80 else tc.arguments
-                        console.print(f"\n[dim]⚙ {tc.name}({args_preview})[/]", highlight=False)
+                        args_preview = (
+                            tc.arguments[:80] + "..."
+                            if len(tc.arguments) > 80
+                            else tc.arguments
+                        )
+                        console.print(
+                            f"\n[dim]⚙ {tc.name}({args_preview})[/]", highlight=False
+                        )
                 elif event.type == StreamEventType.ERROR:
                     console.print(f"\n[red]Error: {event.error}[/]")
                 elif event.type == StreamEventType.DONE:
@@ -189,7 +200,7 @@ async def run_interactive_async(
         await kernel.shutdown()
 
 
-def _handle_slash_command(command: str, messages: List[Message]) -> bool:
+def _handle_slash_command(command: str, messages: list[Message]) -> bool:
     """Handle slash commands. Returns True if should exit."""
     cmd = command.lower()
     if cmd in ("/exit", "/quit", "/q"):
@@ -220,7 +231,7 @@ def _handle_slash_command(command: str, messages: List[Message]) -> bool:
 
 async def show_audit_logs_async(
     limit: int = 20,
-    tool: Optional[str] = None,
+    tool: str | None = None,
 ) -> None:
     """Display recent audit logs."""
     from octopus.core.audit import AuditFilters, AuditLogger
@@ -293,7 +304,9 @@ async def list_sessions_async() -> None:
 
         for s in sessions:
             created = s.start_time.strftime("%Y-%m-%d %H:%M") if s.start_time else "—"
-            last = s.last_activity.strftime("%Y-%m-%d %H:%M") if s.last_activity else "—"
+            last = (
+                s.last_activity.strftime("%Y-%m-%d %H:%M") if s.last_activity else "—"
+            )
             table.add_row(s.session_id[:8], s.name or "(unnamed)", created, last)
 
         console.print(table)

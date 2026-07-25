@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict
+from typing import Any
 
 from octopus.core.kernel import Context, ToolResult
 
@@ -13,17 +13,25 @@ class ShellTool:
 
     name = "shell"
     description = "Execute a shell command and return stdout/stderr. Dangerous commands require approval."
-    input_schema: Dict[str, Any] = {
+    input_schema: dict[str, Any] = {
         "type": "object",
         "properties": {
             "command": {"type": "string", "description": "Shell command to execute"},
-            "timeout": {"type": "integer", "description": "Timeout in seconds (default: 60)", "default": 60},
-            "workdir": {"type": "string", "description": "Working directory (default: workspace)", "default": "."},
+            "timeout": {
+                "type": "integer",
+                "description": "Timeout in seconds (default: 60)",
+                "default": 60,
+            },
+            "workdir": {
+                "type": "string",
+                "description": "Working directory (default: workspace)",
+                "default": ".",
+            },
         },
         "required": ["command"],
     }
 
-    async def execute(self, args: Dict[str, Any], ctx: Context) -> ToolResult:
+    async def execute(self, args: dict[str, Any], ctx: Context) -> ToolResult:
         command = args["command"]
         timeout = args.get("timeout", 60)
         workdir = args.get("workdir", ".")
@@ -32,7 +40,6 @@ class ShellTool:
         if workdir == ".":
             cwd = str(ctx.workspace) if ctx.workspace else None
         else:
-            from pathlib import Path
             cwd = str((ctx.workspace / workdir).resolve()) if ctx.workspace else workdir
 
         try:
@@ -47,7 +54,7 @@ class ShellTool:
                 stdout_bytes, stderr_bytes = await asyncio.wait_for(
                     proc.communicate(), timeout=timeout
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 proc.kill()
                 await proc.wait()
                 return ToolResult(
@@ -57,8 +64,12 @@ class ShellTool:
                     metadata={"exit_code": -1, "command": command},
                 )
 
-            stdout = stdout_bytes.decode("utf-8", errors="replace") if stdout_bytes else ""
-            stderr = stderr_bytes.decode("utf-8", errors="replace") if stderr_bytes else ""
+            stdout = (
+                stdout_bytes.decode("utf-8", errors="replace") if stdout_bytes else ""
+            )
+            stderr = (
+                stderr_bytes.decode("utf-8", errors="replace") if stderr_bytes else ""
+            )
 
             success = proc.returncode == 0
             output_parts: list[str] = []

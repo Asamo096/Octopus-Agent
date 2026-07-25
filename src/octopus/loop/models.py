@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Dict, List, Optional
-
+from dataclasses import dataclass
+from enum import StrEnum
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Messages
 # ---------------------------------------------------------------------------
 
-class Role(str, Enum):
+
+class Role(StrEnum):
     SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"
@@ -21,6 +21,7 @@ class Role(str, Enum):
 @dataclass
 class ToolCallDelta:
     """A tool call as it arrives during streaming."""
+
     id: str
     name: str
     arguments: str  # JSON string, accumulated across chunks
@@ -29,15 +30,16 @@ class ToolCallDelta:
 @dataclass
 class Message:
     """A single conversation message."""
-    role: Role
-    content: Optional[str] = None
-    tool_calls: Optional[List[ToolCallDelta]] = None
-    tool_call_id: Optional[str] = None
-    name: Optional[str] = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    role: Role
+    content: str | None = None
+    tool_calls: list[ToolCallDelta] | None = None
+    tool_call_id: str | None = None
+    name: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert to litellm/OpenAI-compatible dict."""
-        d: Dict[str, Any] = {"role": self.role.value}
+        d: dict[str, Any] = {"role": self.role.value}
         if self.content is not None:
             d["content"] = self.content
         if self.tool_calls:
@@ -60,19 +62,21 @@ class Message:
 # Stream events
 # ---------------------------------------------------------------------------
 
-class StreamEventType(str, Enum):
-    TEXT = "text"              # A chunk of assistant text
-    TOOL_CALL = "tool_call"   # A complete tool call
-    USAGE = "usage"           # Token usage update
-    ERROR = "error"           # An error occurred
-    DONE = "done"             # Stream finished
+
+class StreamEventType(StrEnum):
+    TEXT = "text"  # A chunk of assistant text
+    TOOL_CALL = "tool_call"  # A complete tool call
+    USAGE = "usage"  # Token usage update
+    ERROR = "error"  # An error occurred
+    DONE = "done"  # Stream finished
 
 
 @dataclass
 class StreamEvent:
     """An event yielded during streaming."""
+
     type: StreamEventType
-    text: Optional[str] = None
-    tool_call: Optional[ToolCallDelta] = None
-    usage: Optional[Dict[str, int]] = None
-    error: Optional[str] = None
+    text: str | None = None
+    tool_call: ToolCallDelta | None = None
+    usage: dict[str, int] | None = None
+    error: str | None = None

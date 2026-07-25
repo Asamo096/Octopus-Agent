@@ -1,10 +1,18 @@
 """Octopus Agent Core — Harness kernel components."""
 
-from .kernel import Context, Kernel, PermissionMode, ToolCall, ToolResult, get_kernel, shutdown_kernel
-from .permissions import PermissionEngine, PermissionResult
 from .audit import AuditEvent, AuditFilters, AuditLogger
-from .sandbox import OperationType, Sandbox, SandboxResult
 from .hooks import Hook, HookEvent, HookManager, HookResult
+from .kernel import (
+    Context,
+    Kernel,
+    PermissionMode,
+    ToolCall,
+    ToolResult,
+    get_kernel,
+    shutdown_kernel,
+)
+from .permissions import PermissionEngine, PermissionResult
+from .sandbox import OperationType, Sandbox, SandboxResult
 from .state import SessionState, StateManager
 
 __all__ = [

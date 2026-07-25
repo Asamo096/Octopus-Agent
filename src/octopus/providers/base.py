@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Any, AsyncIterator, Dict, List, Protocol
+from collections.abc import AsyncIterator
+from typing import Any, Protocol
 
 from octopus.loop.models import Message, StreamEvent
-from octopus.tools.base import Tool
 
 
 class Provider(Protocol):
     """Protocol that all LLM providers must implement."""
 
-    async def stream(
+    def stream(
         self,
-        messages: List[Message],
-        tools: List[Dict[str, Any]],
+        messages: list[Message],
+        tools: list[dict[str, Any]],
         model: str,
         *,
         max_tokens: int = 4096,

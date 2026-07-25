@@ -6,8 +6,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 
 def _run_octopus(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
     """Run the octopus CLI command."""

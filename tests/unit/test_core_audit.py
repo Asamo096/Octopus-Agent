@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -22,7 +22,7 @@ async def audit(tmp_path: Path):
 class TestAuditLogger:
     async def test_log_and_query(self, audit: AuditLogger) -> None:
         event = AuditEvent(
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             tool="read_file",
             args={"path": "/tmp/test.py"},
             result={"output": "file contents"},
@@ -39,7 +39,7 @@ class TestAuditLogger:
 
     async def test_query_by_session(self, audit: AuditLogger) -> None:
         event = AuditEvent(
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             tool="shell",
             args={"command": "ls"},
             result=None,
@@ -55,14 +55,16 @@ class TestAuditLogger:
 
     async def test_query_by_tool(self, audit: AuditLogger) -> None:
         for tool_name in ("read_file", "write_file", "read_file"):
-            await audit.log(AuditEvent(
-                timestamp=datetime.now(timezone.utc),
-                tool=tool_name,
-                args={},
-                result=None,
-                duration=0.01,
-                permission_decision="ALLOWED",
-            ))
+            await audit.log(
+                AuditEvent(
+                    timestamp=datetime.now(UTC),
+                    tool=tool_name,
+                    args={},
+                    result=None,
+                    duration=0.01,
+                    permission_decision="ALLOWED",
+                )
+            )
 
         events = await audit.get_by_tool("read_file")
         assert all(e.tool == "read_file" for e in events)
@@ -70,27 +72,31 @@ class TestAuditLogger:
 
     async def test_get_recent(self, audit: AuditLogger) -> None:
         for i in range(5):
-            await audit.log(AuditEvent(
-                timestamp=datetime.now(timezone.utc),
-                tool=f"tool_{i}",
-                args={"i": i},
-                result=None,
-                duration=0.01,
-                permission_decision="ALLOWED",
-            ))
+            await audit.log(
+                AuditEvent(
+                    timestamp=datetime.now(UTC),
+                    tool=f"tool_{i}",
+                    args={"i": i},
+                    result=None,
+                    duration=0.01,
+                    permission_decision="ALLOWED",
+                )
+            )
 
         recent = await audit.get_recent(limit=3)
         assert len(recent) == 3
 
     async def test_export_json(self, audit: AuditLogger, tmp_path: Path) -> None:
-        await audit.log(AuditEvent(
-            timestamp=datetime.now(timezone.utc),
-            tool="test_tool",
-            args={"key": "value"},
-            result="ok",
-            duration=0.02,
-            permission_decision="ALLOWED",
-        ))
+        await audit.log(
+            AuditEvent(
+                timestamp=datetime.now(UTC),
+                tool="test_tool",
+                args={"key": "value"},
+                result="ok",
+                duration=0.02,
+                permission_decision="ALLOWED",
+            )
+        )
 
         out = tmp_path / "export.json"
         await audit.export_json(out)
@@ -99,14 +105,16 @@ class TestAuditLogger:
         assert "test_tool" in content
 
     async def test_export_csv(self, audit: AuditLogger, tmp_path: Path) -> None:
-        await audit.log(AuditEvent(
-            timestamp=datetime.now(timezone.utc),
-            tool="test_tool",
-            args={},
-            result=None,
-            duration=0.01,
-            permission_decision="ALLOWED",
-        ))
+        await audit.log(
+            AuditEvent(
+                timestamp=datetime.now(UTC),
+                tool="test_tool",
+                args={},
+                result=None,
+                duration=0.01,
+                permission_decision="ALLOWED",
+            )
+        )
 
         out = tmp_path / "export.csv"
         await audit.export_csv(out)

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from octopus.core.state import SessionState, StateManager
+from octopus.core.state import StateManager
 
 
 @pytest.fixture
@@ -96,9 +96,7 @@ class TestStateManager:
         assert "app.font_size" in app_values
 
     async def test_session_with_workspace(self, state: StateManager) -> None:
-        session = await state.create_session(
-            "s1", workspace="/home/user/project"
-        )
+        session = await state.create_session("s1", workspace="/home/user/project")
         assert session.workspace == "/home/user/project"
 
         retrieved = await state.get_session("s1")

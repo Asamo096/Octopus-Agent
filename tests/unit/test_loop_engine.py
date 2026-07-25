@@ -2,23 +2,29 @@
 
 from __future__ import annotations
 
-import json
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator, Dict, List
+from typing import Any
 
 import pytest
 
-from octopus.core.kernel import Context, Kernel, PermissionMode, ToolResult
+from octopus.core.kernel import Context, Kernel, PermissionMode
 from octopus.loop.engine import run_query
-from octopus.loop.models import Message, Role, StreamEvent, StreamEventType, ToolCallDelta
+from octopus.loop.models import (
+    Message,
+    Role,
+    StreamEvent,
+    StreamEventType,
+    ToolCallDelta,
+)
 from octopus.tools.base import ToolRegistry
 from octopus.tools.filesystem import ReadFileTool, WriteFileTool
 from octopus.tools.shell import ShellTool
 
-
 # ---------------------------------------------------------------------------
 # Mock provider helpers
 # ---------------------------------------------------------------------------
+
 
 class TextOnlyProvider:
     """Returns a simple text response with no tool calls."""
@@ -28,8 +34,8 @@ class TextOnlyProvider:
 
     async def stream(
         self,
-        messages: List[Message],
-        tools: List[Dict[str, Any]],
+        messages: list[Message],
+        tools: list[dict[str, Any]],
         model: str,
         *,
         max_tokens: int = 4096,
@@ -49,8 +55,8 @@ class ToolThenTextProvider:
 
     async def stream(
         self,
-        messages: List[Message],
-        tools: List[Dict[str, Any]],
+        messages: list[Message],
+        tools: list[dict[str, Any]],
         model: str,
         *,
         max_tokens: int = 4096,
@@ -60,7 +66,9 @@ class ToolThenTextProvider:
             # First call: return a tool call
             yield StreamEvent(
                 type=StreamEventType.TOOL_CALL,
-                tool_call=ToolCallDelta(id="call-1", name=self._tool_name, arguments=self._tool_args),
+                tool_call=ToolCallDelta(
+                    id="call-1", name=self._tool_name, arguments=self._tool_args
+                ),
             )
             yield StreamEvent(type=StreamEventType.DONE)
         else:
@@ -74,8 +82,8 @@ class ErrorProvider:
 
     async def stream(
         self,
-        messages: List[Message],
-        tools: List[Dict[str, Any]],
+        messages: list[Message],
+        tools: list[dict[str, Any]],
         model: str,
         *,
         max_tokens: int = 4096,
@@ -87,6 +95,7 @@ class ErrorProvider:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def registry() -> ToolRegistry:
@@ -115,7 +124,9 @@ class TestRunQuery:
         messages = [Message(role=Role.USER, content="Hi")]
 
         events = []
-        async for e in run_query(messages, provider, kernel, registry, ctx, model="test"):
+        async for e in run_query(
+            messages, provider, kernel, registry, ctx, model="test"
+        ):
             events.append(e)
 
         # Should have TEXT + DONE
@@ -145,7 +156,9 @@ class TestRunQuery:
         messages = [Message(role=Role.USER, content="Read test.txt")]
 
         events = []
-        async for e in run_query(messages, provider, kernel, registry, ctx, model="test"):
+        async for e in run_query(
+            messages, provider, kernel, registry, ctx, model="test"
+        ):
             events.append(e)
 
         text_events = [e for e in events if e.type == StreamEventType.TEXT]
@@ -171,7 +184,9 @@ class TestRunQuery:
         messages = [Message(role=Role.USER, content="test")]
 
         events = []
-        async for e in run_query(messages, provider, kernel, registry, ctx, model="test"):
+        async for e in run_query(
+            messages, provider, kernel, registry, ctx, model="test"
+        ):
             events.append(e)
 
         error_events = [e for e in events if e.type == StreamEventType.ERROR]
@@ -188,7 +203,11 @@ class TestRunQuery:
             async def stream(self, messages, tools, model, **kwargs):
                 yield StreamEvent(
                     type=StreamEventType.TOOL_CALL,
-                    tool_call=ToolCallDelta(id="c1", name="read_file", arguments='{"path": "nonexistent.txt"}'),
+                    tool_call=ToolCallDelta(
+                        id="c1",
+                        name="read_file",
+                        arguments='{"path": "nonexistent.txt"}',
+                    ),
                 )
                 yield StreamEvent(type=StreamEventType.DONE)
 
@@ -196,7 +215,9 @@ class TestRunQuery:
         messages = [Message(role=Role.USER, content="test")]
 
         events = []
-        async for e in run_query(messages, provider, kernel, registry, ctx, model="test", max_turns=3):
+        async for e in run_query(
+            messages, provider, kernel, registry, ctx, model="test", max_turns=3
+        ):
             events.append(e)
 
         error_events = [e for e in events if e.type == StreamEventType.ERROR]

@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, AsyncIterator, Dict, List, Optional
+from collections.abc import AsyncIterator
 
 from octopus.core.kernel import Context, Kernel, ToolCall, ToolResult
 from octopus.loop.models import (
@@ -33,7 +33,7 @@ DEFAULT_MAX_TURNS = 50
 
 
 async def run_query(
-    messages: List[Message],
+    messages: list[Message],
     provider: Provider,
     kernel: Kernel,
     registry: ToolRegistry,
@@ -59,16 +59,16 @@ async def run_query(
         # Stream the model response
         collected_text: list[str] = []
         collected_tool_calls: list[ToolCallDelta] = []
-        usage: Optional[Dict[str, int]] = None
 
-        async for event in provider.stream(messages, tools_def, model, max_tokens=max_tokens):
+        async for event in provider.stream(
+            messages, tools_def, model, max_tokens=max_tokens
+        ):
             if event.type == StreamEventType.TEXT:
                 collected_text.append(event.text or "")
                 yield event
             elif event.type == StreamEventType.TOOL_CALL and event.tool_call:
                 collected_tool_calls.append(event.tool_call)
             elif event.type == StreamEventType.USAGE:
-                usage = event.usage
                 yield event
             elif event.type == StreamEventType.ERROR:
                 yield event
@@ -81,7 +81,9 @@ async def run_query(
         if not collected_tool_calls:
             # Append assistant message to history
             assistant_text = "".join(collected_text)
-            messages.append(Message(role=Role.ASSISTANT, content=assistant_text or None))
+            messages.append(
+                Message(role=Role.ASSISTANT, content=assistant_text or None)
+            )
             yield StreamEvent(type=StreamEventType.DONE)
             return
 
@@ -95,26 +97,37 @@ async def run_query(
 
         # Execute tool calls (parallel)
         tool_tasks = [
-            _execute_tool(kernel, registry, tc, ctx)
-            for tc in collected_tool_calls
+            _execute_tool(kernel, registry, tc, ctx) for tc in collected_tool_calls
         ]
         tool_results = await asyncio.gather(*tool_tasks, return_exceptions=True)
 
         # Process results and yield events
-        for tc, result in zip(collected_tool_calls, tool_results):
-            if isinstance(result, Exception):
-                result = ToolResult(success=False, output=None, error=str(result))
+        for tc, raw_result in zip(collected_tool_calls, tool_results, strict=True):
+            if isinstance(raw_result, BaseException):
+                tool_result = ToolResult(
+                    success=False, output=None, error=str(raw_result)
+                )
+            else:
+                tool_result = raw_result
 
             # Yield the tool call event
             yield StreamEvent(type=StreamEventType.TOOL_CALL, tool_call=tc)
 
             # Append tool result message
-            messages.append(Message(
-                role=Role.TOOL,
-                content=json.dumps({"output": result.output, "error": result.error, "success": result.success}),
-                tool_call_id=tc.id,
-                name=tc.name,
-            ))
+            messages.append(
+                Message(
+                    role=Role.TOOL,
+                    content=json.dumps(
+                        {
+                            "output": tool_result.output,
+                            "error": tool_result.error,
+                            "success": tool_result.success,
+                        }
+                    ),
+                    tool_call_id=tc.id,
+                    name=tc.name,
+                )
+            )
 
     # Max turns exceeded
     logger.warning("Max turns (%d) exceeded", max_turns)
@@ -136,11 +149,15 @@ async def _execute_tool(
     try:
         args = json.loads(tc.arguments) if tc.arguments else {}
     except json.JSONDecodeError:
-        return ToolResult(success=False, output=None, error=f"Invalid JSON arguments: {tc.arguments}")
+        return ToolResult(
+            success=False, output=None, error=f"Invalid JSON arguments: {tc.arguments}"
+        )
 
     tool = registry.get(tc.name)
     if tool is None:
-        return ToolResult(success=False, output=None, error=f"Tool not found: {tc.name}")
+        return ToolResult(
+            success=False, output=None, error=f"Tool not found: {tc.name}"
+        )
 
     # Create ToolCall for the kernel
     tool_call = ToolCall(tool_name=tc.name, arguments=args, call_id=tc.id)

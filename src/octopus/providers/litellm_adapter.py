@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-import json
-from typing import Any, AsyncIterator, Dict, List, Optional
+from collections.abc import AsyncIterator
+from typing import Any
 
-from octopus.loop.models import Message, Role, StreamEvent, StreamEventType, ToolCallDelta
+from octopus.loop.models import (
+    Message,
+    StreamEvent,
+    StreamEventType,
+    ToolCallDelta,
+)
 
 
 class LiteLLMProvider:
@@ -15,14 +20,16 @@ class LiteLLMProvider:
     the response chunks into Octopus StreamEvents.
     """
 
-    def __init__(self, *, api_key: Optional[str] = None, base_url: Optional[str] = None) -> None:
+    def __init__(
+        self, *, api_key: str | None = None, base_url: str | None = None
+    ) -> None:
         self._api_key = api_key
         self._base_url = base_url
 
     async def stream(
         self,
-        messages: List[Message],
-        tools: List[Dict[str, Any]],
+        messages: list[Message],
+        tools: list[dict[str, Any]],
         model: str,
         *,
         max_tokens: int = 4096,
@@ -34,7 +41,7 @@ class LiteLLMProvider:
         litellm_messages = [m.to_dict() for m in messages]
 
         # Build kwargs
-        kwargs: Dict[str, Any] = {
+        kwargs: dict[str, Any] = {
             "model": model,
             "messages": litellm_messages,
             "stream": True,
@@ -48,7 +55,7 @@ class LiteLLMProvider:
             kwargs["api_base"] = self._base_url
 
         # Accumulate tool calls across chunks
-        tool_calls: Dict[int, ToolCallDelta] = {}
+        tool_calls: dict[int, ToolCallDelta] = {}
 
         try:
             response = await litellm.acompletion(**kwargs)
@@ -82,7 +89,9 @@ class LiteLLMProvider:
                         if idx not in tool_calls:
                             tool_calls[idx] = ToolCallDelta(
                                 id=tc_delta.id or "",
-                                name=tc_delta.function.name if tc_delta.function and tc_delta.function.name else "",
+                                name=tc_delta.function.name
+                                if tc_delta.function and tc_delta.function.name
+                                else "",
                                 arguments="",
                             )
                         else:

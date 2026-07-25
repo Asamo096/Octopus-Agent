@@ -8,28 +8,29 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import aiosqlite
-
 
 # ---------------------------------------------------------------------------
 # Data types
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SessionState:
     """State for a single conversation session."""
+
     session_id: str
     name: str = ""
-    start_time: Optional[datetime] = None
-    last_activity: Optional[datetime] = None
-    user_id: Optional[str] = None
-    workspace: Optional[str] = None
-    context: Dict[str, Any] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    start_time: datetime | None = None
+    last_activity: datetime | None = None
+    user_id: str | None = None
+    workspace: str | None = None
+    context: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -59,12 +60,13 @@ CREATE TABLE IF NOT EXISTS kv_store (
 # StateManager
 # ---------------------------------------------------------------------------
 
+
 class StateManager:
     """Global state manager backed by SQLite."""
 
     def __init__(self, *, db_path: Path) -> None:
         self._db_path = db_path
-        self._db: Optional[aiosqlite.Connection] = None
+        self._db: aiosqlite.Connection | None = None
 
     async def _ensure_db(self) -> aiosqlite.Connection:
         """Lazily open the database connection."""
@@ -81,12 +83,12 @@ class StateManager:
         session_id: str,
         *,
         name: str = "",
-        user_id: Optional[str] = None,
-        workspace: Optional[str] = None,
+        user_id: str | None = None,
+        workspace: str | None = None,
     ) -> SessionState:
         """Create a new session and return it."""
         db = await self._ensure_db()
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         await db.execute(
             "INSERT INTO sessions (id, name, start_time, last_activity, user_id, workspace) VALUES (?, ?, ?, ?, ?, ?)",
             (session_id, name, now, now, user_id, workspace),
@@ -101,7 +103,7 @@ class StateManager:
             workspace=workspace,
         )
 
-    async def get_session(self, session_id: str) -> Optional[SessionState]:
+    async def get_session(self, session_id: str) -> SessionState | None:
         """Get a session by ID."""
         db = await self._ensure_db()
         cursor = await db.execute("SELECT * FROM sessions WHERE id = ?", (session_id,))
@@ -114,8 +116,8 @@ class StateManager:
         """Update fields on a session."""
         db = await self._ensure_db()
         allowed = {"name", "user_id", "workspace", "context", "metadata"}
-        updates: List[str] = []
-        params: List[Any] = []
+        updates: list[str] = []
+        params: list[Any] = []
         for key, value in kwargs.items():
             if key not in allowed:
                 continue
@@ -126,7 +128,7 @@ class StateManager:
         if not updates:
             return
         updates.append("last_activity = ?")
-        params.append(datetime.now(timezone.utc).isoformat())
+        params.append(datetime.now(UTC).isoformat())
         params.append(session_id)
         await db.execute(
             f"UPDATE sessions SET {', '.join(updates)} WHERE id = ?",
@@ -140,7 +142,7 @@ class StateManager:
         await db.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
         await db.commit()
 
-    async def list_sessions(self) -> List[SessionState]:
+    async def list_sessions(self) -> list[SessionState]:
         """List all sessions, most recent first."""
         db = await self._ensure_db()
         cursor = await db.execute("SELECT * FROM sessions ORDER BY last_activity DESC")
@@ -173,7 +175,7 @@ class StateManager:
         await db.execute("DELETE FROM kv_store WHERE key = ?", (key,))
         await db.commit()
 
-    async def list_values(self, prefix: str = "") -> Dict[str, Any]:
+    async def list_values(self, prefix: str = "") -> dict[str, Any]:
         """List all key-value pairs, optionally filtered by prefix."""
         db = await self._ensure_db()
         if prefix:

@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import sys
-from typing import Optional
 
 import typer
 from rich.console import Console
-from rich.markdown import Markdown
 from rich.panel import Panel
 
 from octopus import __version__
@@ -21,9 +18,9 @@ app = typer.Typer(
 console = Console()
 
 
-def _run_async(coro):
+def _run_async(coro: object) -> None:
     """Run an async function from sync context."""
-    asyncio.run(coro)
+    asyncio.run(coro)  # type: ignore[arg-type]
 
 
 def version_callback(value: bool) -> None:
@@ -35,8 +32,12 @@ def version_callback(value: bool) -> None:
 
 @app.callback()
 def main(
-    version: Optional[bool] = typer.Option(
-        None, "--version", "-v", callback=version_callback, is_eager=True,
+    version: bool | None = typer.Option(
+        None,
+        "--version",
+        "-v",
+        callback=version_callback,
+        is_eager=True,
         help="Show version and exit.",
     ),
 ) -> None:
@@ -48,10 +49,14 @@ def main(
 # ---------------------------------------------------------------------------
 @app.command()
 def cli(
-    prompt: Optional[str] = typer.Argument(None, help="Single prompt (omit for interactive mode)"),
-    model: Optional[str] = typer.Option(None, "--model", "-m", help="Model to use"),
+    prompt: str | None = typer.Argument(
+        None, help="Single prompt (omit for interactive mode)"
+    ),
+    model: str | None = typer.Option(None, "--model", "-m", help="Model to use"),
     permission_mode: str = typer.Option(
-        "default", "--permission-mode", "-p",
+        "default",
+        "--permission-mode",
+        "-p",
         help="Permission mode: default, plan, full_auto",
     ),
 ) -> None:
@@ -59,8 +64,14 @@ def cli(
     from octopus.cli_runtime import run_interactive_async, run_single_prompt_async
 
     if prompt:
-        console.print(Panel(f"[bold]Prompt:[/] {prompt}", title="🐙 Octopus", border_style="blue"))
-        _run_async(run_single_prompt_async(prompt, model=model, permission_mode=permission_mode))
+        console.print(
+            Panel(f"[bold]Prompt:[/] {prompt}", title="🐙 Octopus", border_style="blue")
+        )
+        _run_async(
+            run_single_prompt_async(
+                prompt, model=model, permission_mode=permission_mode
+            )
+        )
     else:
         console.print(
             Panel(
@@ -79,8 +90,10 @@ def cli(
 # ---------------------------------------------------------------------------
 @app.command()
 def code(
-    action: str = typer.Argument(..., help="Action: init | fix | test | refactor | logs"),
-    path: Optional[str] = typer.Option(".", "--path", help="Project path"),
+    action: str = typer.Argument(
+        ..., help="Action: init | fix | test | refactor | logs"
+    ),
+    path: str | None = typer.Option(".", "--path", help="Project path"),
 ) -> None:
     """Code agent subcommands."""
     from octopus.cli_runtime import code_init_async, show_audit_logs_async
@@ -103,14 +116,14 @@ def code(
 @app.command()
 def config(
     action: str = typer.Argument(..., help="Action: show | set | list"),
-    key: Optional[str] = typer.Argument(None, help="Config key"),
-    value: Optional[str] = typer.Argument(None, help="Config value (for set)"),
+    key: str | None = typer.Argument(None, help="Config key"),
+    value: str | None = typer.Argument(None, help="Config value (for set)"),
 ) -> None:
     """Configuration management."""
     from octopus.cli_runtime import _get_db_path
     from octopus.core.state import StateManager
 
-    async def _show():
+    async def _show() -> None:
         state = StateManager(db_path=_get_db_path())
         try:
             vals = await state.list_values(prefix="config.")
@@ -122,7 +135,7 @@ def config(
         finally:
             await state.close()
 
-    async def _set():
+    async def _set() -> None:
         state = StateManager(db_path=_get_db_path())
         try:
             await state.set_value(f"config.{key}", value)
@@ -150,7 +163,7 @@ def config(
 @app.command()
 def provider(
     action: str = typer.Argument(..., help="Action: list | use | add"),
-    name: Optional[str] = typer.Argument(None, help="Provider name"),
+    name: str | None = typer.Argument(None, help="Provider name"),
 ) -> None:
     """Provider management."""
     if action == "list":
@@ -179,7 +192,7 @@ def provider(
 @app.command()
 def session(
     action: str = typer.Argument(..., help="Action: list | resume | new"),
-    session_id: Optional[str] = typer.Argument(None, help="Session ID"),
+    session_id: str | None = typer.Argument(None, help="Session ID"),
 ) -> None:
     """Session management."""
     from octopus.cli_runtime import list_sessions_async
@@ -206,7 +219,7 @@ def session(
 @app.command()
 def permissions(
     action: str = typer.Argument(..., help="Action: list | add | remove"),
-    pattern: Optional[str] = typer.Argument(None, help="Path/command pattern"),
+    pattern: str | None = typer.Argument(None, help="Path/command pattern"),
 ) -> None:
     """Harness permission management."""
     if action == "list":

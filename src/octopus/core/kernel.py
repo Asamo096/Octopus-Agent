@@ -12,38 +12,41 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Optional, Protocol
-
+from typing import Any, Protocol
 
 # ---------------------------------------------------------------------------
 # Core data types
 # ---------------------------------------------------------------------------
 
+
 class PermissionMode(Enum):
     """Permission modes for the kernel."""
-    DEFAULT = "default"        # Confirm mutating operations
-    PLAN = "plan"              # Block all writes
-    FULL_AUTO = "full_auto"    # Allow everything
+
+    DEFAULT = "default"  # Confirm mutating operations
+    PLAN = "plan"  # Block all writes
+    FULL_AUTO = "full_auto"  # Allow everything
 
 
 @dataclass
 class ToolCall:
     """Represents a tool call from the agent."""
+
     tool_name: str
-    arguments: Dict[str, Any]
-    call_id: Optional[str] = None
+    arguments: dict[str, Any]
+    call_id: str | None = None
 
 
 @dataclass
 class ToolResult:
     """Represents the result of a tool execution."""
+
     success: bool
     output: Any
-    error: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = field(default_factory=dict)
+    error: str | None = None
+    metadata: dict[str, Any] | None = field(default_factory=dict)
 
 
 @dataclass
@@ -53,29 +56,33 @@ class Context:
     Tools access the Kernel through `ctx.kernel` for permission checks,
     audit logging, and other harness operations.
     """
+
     session_id: str
-    kernel: Optional["Kernel"] = None
-    workspace: Optional[Path] = None
+    kernel: Kernel | None = None
+    workspace: Path | None = None
     permission_mode: PermissionMode = PermissionMode.DEFAULT
-    user_id: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    user_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
 # Tool protocol
 # ---------------------------------------------------------------------------
 
+
 class Tool(Protocol):
     """Protocol that all tools must implement."""
+
     name: str
     description: str
 
-    async def execute(self, args: Dict[str, Any], ctx: Context) -> ToolResult: ...
+    async def execute(self, args: dict[str, Any], ctx: Context) -> ToolResult: ...
 
 
 # ---------------------------------------------------------------------------
 # Kernel
 # ---------------------------------------------------------------------------
+
 
 class Kernel:
     """Central orchestrator.  Every agent action passes through it.
@@ -91,10 +98,10 @@ class Kernel:
     def __init__(
         self,
         *,
-        workspace: Optional[Path] = None,
+        workspace: Path | None = None,
         permission_mode: PermissionMode = PermissionMode.DEFAULT,
-        db_path: Optional[Path] = None,
-        settings: Optional[Dict[str, Any]] = None,
+        db_path: Path | None = None,
+        settings: dict[str, Any] | None = None,
     ) -> None:
         self.workspace = workspace or Path.cwd()
         self.permission_mode = permission_mode
@@ -111,7 +118,7 @@ class Kernel:
         self.state: Any = None
 
         # Tool registry (populated externally)
-        self._tools: Dict[str, Tool] = {}
+        self._tools: dict[str, Tool] = {}
 
         self._initialized = False
 
@@ -156,15 +163,14 @@ class Kernel:
         """Register a tool with the kernel."""
         self._tools[tool.name] = tool
 
-    def get_tool(self, name: str) -> Optional[Tool]:
+    def get_tool(self, name: str) -> Tool | None:
         """Get a registered tool by name."""
         return self._tools.get(name)
 
-    def list_tools(self) -> list[Dict[str, Any]]:
+    def list_tools(self) -> list[dict[str, Any]]:
         """List all registered tools (for provider tool definitions)."""
         return [
-            {"name": t.name, "description": t.description}
-            for t in self._tools.values()
+            {"name": t.name, "description": t.description} for t in self._tools.values()
         ]
 
     # ---- harness pipeline -------------------------------------------------
@@ -192,7 +198,7 @@ class Kernel:
         # ---- Step 1: PreToolUse hooks ----
         from octopus.core.hooks import HookEvent
 
-        hook_data: Dict[str, Any] = {
+        hook_data: dict[str, Any] = {
             "tool_call": tool_call,
             "context": ctx,
         }
@@ -217,7 +223,10 @@ class Kernel:
                 output=None,
                 error=f"Permission denied: {perm_result.reason}",
             )
-        if perm_result.requires_approval and ctx.permission_mode == PermissionMode.DEFAULT:
+        if (
+            perm_result.requires_approval
+            and ctx.permission_mode == PermissionMode.DEFAULT
+        ):
             # In CLI mode this would prompt the user; for now auto-approve
             pass
 
@@ -257,11 +266,14 @@ class Kernel:
 
         # ---- Step 5: PostToolUse hooks + audit ----
         duration = time.monotonic() - start_time
-        await self.hooks.fire(HookEvent.POST_TOOL_USE, {
-            "tool_call": tool_call,
-            "context": ctx,
-            "result": result,
-        })
+        await self.hooks.fire(
+            HookEvent.POST_TOOL_USE,
+            {
+                "tool_call": tool_call,
+                "context": ctx,
+                "result": result,
+            },
+        )
         await self._log_audit(tool_call, ctx, result, duration, "ALLOWED")
 
         return result
@@ -274,7 +286,11 @@ class Kernel:
 
         if tool_call.tool_name in ("write_file", "edit_file"):
             path = tool_call.arguments.get("path", "")
-            op = OperationType.WRITE if tool_call.tool_name == "write_file" else OperationType.WRITE
+            op = (
+                OperationType.WRITE
+                if tool_call.tool_name == "write_file"
+                else OperationType.WRITE
+            )
             sr = self.sandbox.validate_path(Path(path), op)
             return sr.valid, sr.reason or ""
         if tool_call.tool_name == "shell":
@@ -287,7 +303,7 @@ class Kernel:
         self,
         tool_call: ToolCall,
         ctx: Context,
-        result: Optional[ToolResult],
+        result: ToolResult | None,
         duration: float,
         decision: str,
     ) -> None:
@@ -295,10 +311,12 @@ class Kernel:
         from octopus.core.audit import AuditEvent
 
         event = AuditEvent(
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             tool=tool_call.tool_name,
             args=tool_call.arguments,
-            result={"output": result.output, "success": result.success} if result else None,
+            result={"output": result.output, "success": result.success}
+            if result
+            else None,
             duration=duration,
             permission_decision=decision,
             session_id=ctx.session_id,
@@ -311,7 +329,7 @@ class Kernel:
 # Global kernel singleton
 # ---------------------------------------------------------------------------
 
-_kernel_instance: Optional[Kernel] = None
+_kernel_instance: Kernel | None = None
 
 
 async def get_kernel(**kwargs: Any) -> Kernel:

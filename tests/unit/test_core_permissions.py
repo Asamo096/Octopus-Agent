@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
-
 from octopus.core.kernel import Context, PermissionMode, ToolCall
-from octopus.core.permissions import PermissionEngine, PermissionResult
+from octopus.core.permissions import PermissionEngine
 
 
 class TestPermissionEngine:
@@ -61,10 +59,12 @@ class TestPermissionEngine:
         assert result.allowed
 
     def test_custom_sensitive_path(self) -> None:
-        engine = PermissionEngine({
-            "mode": "default",
-            "sensitive_paths": ["**/secret.key"],
-        })
+        engine = PermissionEngine(
+            {
+                "mode": "default",
+                "sensitive_paths": ["**/secret.key"],
+            }
+        )
         tc = ToolCall(tool_name="read_file", arguments={"path": "/project/secret.key"})
         ctx = Context(session_id="s1", permission_mode=PermissionMode.DEFAULT)
         result = engine.check(tc, ctx)

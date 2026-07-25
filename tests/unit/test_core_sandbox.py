@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
-from octopus.core.sandbox import OperationType, Sandbox, SandboxResult
+from octopus.core.sandbox import OperationType, Sandbox
 
 
 class TestSandbox:
@@ -63,5 +61,7 @@ class TestSandbox:
     def test_add_allowed_path(self) -> None:
         sb = Sandbox()
         sb.add_allowed_path("/custom/workspace/*")
-        result = sb.validate_path(Path("/custom/workspace/file.py"), OperationType.WRITE)
+        result = sb.validate_path(
+            Path("/custom/workspace/file.py"), OperationType.WRITE
+        )
         assert result.valid

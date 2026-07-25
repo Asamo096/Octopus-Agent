@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-import pytest
-
-from octopus.loop.models import Message, Role, StreamEvent, StreamEventType, ToolCallDelta
+from octopus.loop.models import (
+    Message,
+    Role,
+    StreamEvent,
+    StreamEventType,
+    ToolCallDelta,
+)
 
 
 class TestMessage:

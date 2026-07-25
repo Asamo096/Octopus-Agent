@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
-
-import pytest
+from typing import Any
 
 from octopus.core.kernel import Context, ToolResult
 from octopus.tools.base import ToolRegistry
@@ -19,7 +17,7 @@ class DummyTool:
         "required": ["text"],
     }
 
-    async def execute(self, args: Dict[str, Any], ctx: Context) -> ToolResult:
+    async def execute(self, args: dict[str, Any], ctx: Context) -> ToolResult:
         return ToolResult(success=True, output=args.get("text", ""))
 
 
@@ -28,7 +26,7 @@ class AnotherTool:
     description = "Another tool"
     input_schema = {"type": "object", "properties": {}}
 
-    async def execute(self, args: Dict[str, Any], ctx: Context) -> ToolResult:
+    async def execute(self, args: dict[str, Any], ctx: Context) -> ToolResult:
         return ToolResult(success=True, output="another")
 
 
