@@ -110,6 +110,8 @@ def select_option(
 ) -> str | None:
     """Display a selection menu with arrow key navigation.
 
+    Uses prompt_toolkit for proper terminal handling (no leaked keypresses).
+
     Args:
         options: List of string options to select from
         title: Optional title to display above options
@@ -118,72 +120,90 @@ def select_option(
     Returns:
         Selected option string, or None if cancelled
     """
-    import sys
-    import termios
-    import tty
+    from prompt_toolkit.key_binding import KeyBindings
 
     if not options:
         return None
 
     selected_index = initial_index
+    result: str | None = None
+    cancelled = False
 
-    # Hide cursor
-    sys.stdout.write("\033[?25l")
-    sys.stdout.flush()
+    kb = KeyBindings()
 
-    try:
-        while True:
-            # Render menu
-            if title:
-                console.print(f"\n  [accent]{title}[/]")
-                console.print()
+    @kb.add("up")
+    def _move_up(event: object) -> None:
+        nonlocal selected_index
+        selected_index = (selected_index - 1) % len(options)
 
-            for i, opt in enumerate(options):
-                if i == selected_index:
-                    console.print(f"  [bold cyan]>[/] [bold]{opt}[/]")
-                else:
-                    console.print(f"    [dim]{opt}[/]")
+    @kb.add("down")
+    def _move_down(event: object) -> None:
+        nonlocal selected_index
+        selected_index = (selected_index + 1) % len(options)
 
-            console.print()
-            console.print("  [dim][[up/down]] Navigate  [[enter]] Confirm  [[esc]] Cancel[/]")
+    @kb.add("enter")
+    def _confirm(event: object) -> None:
+        nonlocal result
+        result = options[selected_index]
+        event.app.exit(result=result)  # type: ignore
 
-            # Wait for keypress (raw mode)
-            fd = sys.stdin.fileno()
-            old_settings = termios.tcgetattr(fd)
-            try:
-                tty.setraw(fd)
-                ch = sys.stdin.read(1)
-            finally:
-                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    @kb.add("escape")
+    def _cancel(event: object) -> None:
+        nonlocal cancelled
+        cancelled = True
+        event.app.exit(result=None)  # type: ignore
 
-            if ch == "\x1b":  # ESC sequence
-                ch2 = sys.stdin.read(1)
-                if ch2 == "[":
-                    ch3 = sys.stdin.read(1)
-                    if ch3 == "A":  # Up arrow
-                        selected_index = (selected_index - 1) % len(options)
-                    elif ch3 == "B":  # Down arrow
-                        selected_index = (selected_index + 1) % len(options)
-                else:
-                    # ESC alone -- cancel
-                    return None
-            elif ch == "\r" or ch == "\n":  # Enter
-                return options[selected_index]
-            elif ch == "\x03":  # Ctrl+C
-                return None
+    @kb.add("c-c")
+    def _cancel_ctrl_c(event: object) -> None:
+        nonlocal cancelled
+        cancelled = True
+        event.app.exit(result=None)  # type: ignore
 
-            # Clear the menu for re-render
-            lines_to_clear = len(options) + 3  # options + blank + help
-            if title:
-                lines_to_clear += 2  # title + blank
-            for _ in range(lines_to_clear):
-                sys.stdout.write("\033[1A")  # Move up one line
-                sys.stdout.write("\033[2K")  # Clear line
+    # Build the menu display
+    def _build_menu_text() -> str:
+        lines = []
+        if title:
+            lines.append(f"  {title}")
+            lines.append("")
+        for i, opt in enumerate(options):
+            if i == selected_index:
+                lines.append(f"  > {opt}")
+            else:
+                lines.append(f"    {opt}")
+        lines.append("")
+        lines.append("  [up/down] Navigate  [enter] Confirm  [esc] Cancel")
+        return "\n".join(lines)
 
-    finally:
-        # Show cursor
-        sys.stdout.write("\033[?25h")
-        sys.stdout.flush()
+    # Use Application for proper terminal handling
+    from prompt_toolkit.application import Application
+    from prompt_toolkit.layout import Layout
+    from prompt_toolkit.layout.containers import HSplit, Window
+    from prompt_toolkit.layout.controls import FormattedTextControl
+
+    # Create a control that renders our menu
+    class MenuControl(FormattedTextControl):
+        def __init__(self) -> None:
+            super().__init__(self._get_text)
+
+        def _get_text(self) -> str:
+            return _build_menu_text()
+
+    # Create application
+    layout = Layout(HSplit([
+        Window(content=MenuControl()),
+    ]))
+
+    app = Application(
+        layout=layout,
+        key_bindings=kb,
+        full_screen=False,
+        erase_when_done=True,
+    )
+
+    # Run the application
+    app.run()
+
+    return result
 
 
 # ---------------------------------------------------------------------------
