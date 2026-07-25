@@ -300,6 +300,9 @@ async def run_interactive_async(
 
         kb = KeyBindings()
 
+        # Interrupt flag — set by Escape, checked during streaming
+        _interrupt_requested = False
+
         @kb.add("s-tab")  # Shift+Tab
         def _cycle_mode(event: object) -> None:
             """Cycle through permission modes: default -> accept_edits -> full_auto -> plan."""
@@ -308,6 +311,12 @@ async def run_interactive_async(
             permission_mode = _MODE_CYCLE[_current_mode_index]
             # Redraw the prompt with updated status bar
             print_status_bar(permission_mode)
+
+        @kb.add("escape")  # Escape
+        def _request_interrupt(event: object) -> None:
+            """Request interruption of current generation."""
+            nonlocal _interrupt_requested
+            _interrupt_requested = True
 
         pt_session: PromptSession[str] = PromptSession(key_bindings=kb)
 
@@ -363,6 +372,9 @@ async def run_interactive_async(
             # Track tool calls for display
             current_tool = None
 
+            # Reset interrupt flag at start of each turn
+            _interrupt_requested = False
+
             async for event in run_query(
                 conversation.messages,
                 provider,
@@ -373,6 +385,11 @@ async def run_interactive_async(
                 conversation=conversation,
                 compaction=compaction,
             ):
+                # Check for interrupt request (Escape key)
+                if _interrupt_requested:
+                    console.print("\n[dim]Interrupted.[/]")
+                    break
+
                 if event.type == StreamEventType.TEXT:
                     collected_text.append(event.text or "")
                     print_assistant_text_stream(event.text or "")
