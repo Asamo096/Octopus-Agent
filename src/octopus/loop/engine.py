@@ -135,6 +135,16 @@ async def run_query(
                         collected_text.clear()
                         if cleaned:
                             collected_text.append(cleaned)
+                    else:
+                        # If the entire response looks like a bare shell command, execute it
+                        stripped = full_text.strip()
+                        if _is_shell_command(stripped):
+                            collected_tool_calls = [ToolCallDelta(
+                                id="bare_cmd_0",
+                                name="shell",
+                                arguments=json.dumps({"command": stripped}),
+                            )]
+                            collected_text.clear()
         except Exception as exc:
             error_msg = str(exc)
             # Reactive compaction on "prompt too long" errors
@@ -265,6 +275,26 @@ async def _execute_tool(
 
     # Execute through the kernel's harness pipeline
     return await kernel.execute_tool(tool_call, ctx)
+
+
+
+def _is_shell_command(text: str) -> bool:
+    """Check if text looks like a bare shell command."""
+    if not text or len(text) > 500:
+        return False
+    # Single line or simple chained commands
+    lines = text.strip().split("\n")
+    if len(lines) > 3:
+        return False
+    # Common shell command prefixes
+    prefixes = [
+        "echo ", "cat ", "ls ", "rm ", "mv ", "cp ", "mkdir ", "touch ",
+        "chmod ", "chown ", "grep ", "find ", "sed ", "awk ", "curl ",
+        "wget ", "pip ", "npm ", "git ", "python ", "python3 ",
+        "cd ", "pwd", "whoami", "date", "which ", "apt ", "brew ",
+    ]
+    first_line = lines[0].strip()
+    return any(first_line.startswith(p) for p in prefixes)
 
 
 def _parse_xml_tool_calls(text: str) -> list[ToolCallDelta]:
