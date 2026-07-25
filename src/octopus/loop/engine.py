@@ -1,11 +1,12 @@
 """Agent loop — the core think-act-observe cycle.
 
 The loop:
-1. Streams the model response via the provider
-2. If the model returns tool calls → execute them through the kernel
-3. Append results to messages and loop back
-4. If no tool calls → done, yield final text
-5. Max turns enforcement
+1. Auto-compact check before each API call
+2. Streams the model response via the provider
+3. If the model returns tool calls → execute them through the kernel
+4. Append results to messages and loop back
+5. If no tool calls → done, yield final text
+6. Max turns enforcement
 """
 
 from __future__ import annotations
@@ -16,6 +17,8 @@ import logging
 from collections.abc import AsyncIterator
 
 from octopus.core.kernel import Context, Kernel, ToolCall, ToolResult
+from octopus.loop.compaction import CompactionEngine
+from octopus.loop.context import ConversationContext
 from octopus.loop.models import (
     Message,
     Role,
@@ -42,40 +45,94 @@ async def run_query(
     model: str = "claude-sonnet-4-20250514",
     max_tokens: int = 4096,
     max_turns: int = DEFAULT_MAX_TURNS,
+    conversation: ConversationContext | None = None,
+    compaction: CompactionEngine | None = None,
 ) -> AsyncIterator[StreamEvent]:
     """Run the agent loop.
 
     Yields StreamEvents as they arrive — TEXT for assistant output,
     TOOL_CALL when a tool is invoked, USAGE for token counts,
     ERROR on failure, and DONE when finished.
+
+    If a ConversationContext is provided, messages are synced to it and
+    auto-compaction runs before each API call. If a CompactionEngine is
+    provided without a ConversationContext, it is ignored.
     """
     tools_def = registry.list_definitions()
     turns = 0
+
+    # Sync messages into conversation context if provided
+    if conversation is not None:
+        if not conversation.messages:
+            conversation.messages = messages
+        else:
+            # Merge: conversation owns the history, messages is the working copy
+            messages = conversation.messages
 
     while turns < max_turns:
         turns += 1
         logger.debug("Turn %d/%d", turns, max_turns)
 
+        # Auto-compact before API call if conversation context is available
+        if conversation is not None and compaction is not None:
+            result = compaction.auto_compact(conversation)
+            if result.compacted:
+                logger.info(
+                    "Auto-compact: %s (%d -> %d tokens)",
+                    result.strategy,
+                    result.tokens_before,
+                    result.tokens_after,
+                )
+                yield StreamEvent(
+                    type=StreamEventType.STATUS,
+                    text=f"[Compacted: {result.tokens_before} → {result.tokens_after} tokens via {result.strategy}]",
+                )
+
         # Stream the model response
         collected_text: list[str] = []
         collected_tool_calls: list[ToolCallDelta] = []
 
-        async for event in provider.stream(
-            messages, tools_def, model, max_tokens=max_tokens
-        ):
-            if event.type == StreamEventType.TEXT:
-                collected_text.append(event.text or "")
-                yield event
-            elif event.type == StreamEventType.TOOL_CALL and event.tool_call:
-                collected_tool_calls.append(event.tool_call)
-            elif event.type == StreamEventType.USAGE:
-                yield event
-            elif event.type == StreamEventType.ERROR:
-                yield event
-                yield StreamEvent(type=StreamEventType.DONE)
-                return
-            elif event.type == StreamEventType.DONE:
-                break
+        try:
+            async for event in provider.stream(
+                messages, tools_def, model, max_tokens=max_tokens
+            ):
+                if event.type == StreamEventType.TEXT:
+                    collected_text.append(event.text or "")
+                    yield event
+                elif event.type == StreamEventType.TOOL_CALL and event.tool_call:
+                    collected_tool_calls.append(event.tool_call)
+                elif event.type == StreamEventType.USAGE:
+                    yield event
+                elif event.type == StreamEventType.ERROR:
+                    yield event
+                    yield StreamEvent(type=StreamEventType.DONE)
+                    return
+                elif event.type == StreamEventType.DONE:
+                    break
+        except Exception as exc:
+            error_msg = str(exc)
+            # Reactive compaction on "prompt too long" errors
+            if (
+                "too long" in error_msg.lower()
+                or "context_length_exceeded" in error_msg.lower()
+                or "prompt is too long" in error_msg.lower()
+            ):
+                if conversation is not None and compaction is not None:
+                    rc = compaction.reactive_compact(conversation, error_msg)
+                    logger.info(
+                        "Reactive compact applied: %d -> %d tokens",
+                        rc.tokens_before, rc.tokens_after,
+                    )
+                    yield StreamEvent(
+                        type=StreamEventType.STATUS,
+                        text=f"[Reactive compact: {rc.tokens_before} → {rc.tokens_after} tokens]",
+                    )
+                    # Retry the API call
+                    continue
+            # Not a prompt-too-long error, or no compaction available
+            yield StreamEvent(type=StreamEventType.ERROR, error=error_msg)
+            yield StreamEvent(type=StreamEventType.DONE)
+            return
 
         # No tool calls → assistant is done
         if not collected_tool_calls:

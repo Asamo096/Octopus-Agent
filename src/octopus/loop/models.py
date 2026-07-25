@@ -69,6 +69,7 @@ class StreamEventType(StrEnum):
     USAGE = "usage"  # Token usage update
     ERROR = "error"  # An error occurred
     DONE = "done"  # Stream finished
+    STATUS = "status"  # Status message (compaction, etc.)
 
 
 @dataclass

@@ -193,9 +193,17 @@ def provider(
 def session(
     action: str = typer.Argument(..., help="Action: list | resume | new"),
     session_id: str | None = typer.Argument(None, help="Session ID"),
+    model: str | None = typer.Option(None, "--model", "-m", help="Model to use"),
+    permission_mode: str = typer.Option(
+        "default", "--permission-mode", "-p", help="Permission mode"
+    ),
 ) -> None:
     """Session management."""
-    from octopus.cli_runtime import list_sessions_async
+    from octopus.cli_runtime import (
+        list_sessions_async,
+        session_new_async,
+        session_resume_async,
+    )
 
     if action == "list":
         _run_async(list_sessions_async())
@@ -203,11 +211,9 @@ def session(
         if not session_id:
             console.print("[red]Session ID is required for 'resume'.[/]")
             raise typer.Exit(code=1)
-        console.print(f"[bold]Resuming session:[/] {session_id}")
-        console.print("[dim]Session resume coming in Phase 2.[/]")
+        _run_async(session_resume_async(session_id, model=model, permission_mode=permission_mode))
     elif action == "new":
-        console.print("[bold]Creating new session...[/]")
-        console.print("[dim]Session management coming in Phase 2.[/]")
+        _run_async(session_new_async(model=model, permission_mode=permission_mode))
     else:
         console.print(f"[red]Unknown action:[/] {action}")
         raise typer.Exit(code=1)

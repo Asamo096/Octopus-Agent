@@ -1,6 +1,7 @@
 """CLI runtime — async helpers that wire the agent loop to the CLI.
 
 This module bridges the synchronous Typer CLI with the async agent loop.
+Handles conversation context persistence and auto-compaction.
 """
 
 from __future__ import annotations
@@ -13,6 +14,8 @@ from rich.console import Console
 from rich.markdown import Markdown
 
 from octopus.core.kernel import Context, Kernel, PermissionMode
+from octopus.loop.compaction import CompactionEngine
+from octopus.loop.context import ConversationContext
 from octopus.loop.engine import run_query
 from octopus.loop.models import Message, Role, StreamEventType
 from octopus.providers.litellm_adapter import LiteLLMProvider
@@ -99,19 +102,27 @@ async def run_single_prompt_async(
     )
 
     try:
-        messages: list[Message] = [
-            Message(role=Role.SYSTEM, content=SYSTEM_PROMPT),
-            Message(role=Role.USER, content=prompt),
-        ]
+        # Create conversation context for this session
+        conversation = ConversationContext(
+            session_id=ctx.session_id,
+            system_prompt=SYSTEM_PROMPT,
+            model=model or DEFAULT_MODEL,
+        )
+        conversation.ensure_system_message()
+        conversation.add_message(Message(role=Role.USER, content=prompt))
+
+        compaction = CompactionEngine()
 
         collected: list[str] = []
         async for event in run_query(
-            messages,
+            conversation.messages,
             provider,
             kernel,
             registry,
             ctx,
             model=model or DEFAULT_MODEL,
+            conversation=conversation,
+            compaction=compaction,
         ):
             if event.type == StreamEventType.TEXT:
                 collected.append(event.text or "")
@@ -130,6 +141,9 @@ async def run_single_prompt_async(
         if collected:
             console.print()  # Final newline
 
+        # Persist conversation
+        await conversation.save(kernel.state)
+
     finally:
         await kernel.shutdown()
 
@@ -138,18 +152,44 @@ async def run_interactive_async(
     *,
     model: str | None = None,
     permission_mode: str = "default",
+    resume_session: str | None = None,
 ) -> None:
-    """Run the interactive chat loop."""
+    """Run the interactive chat loop.
+
+    If resume_session is provided, loads that session's conversation history.
+    Otherwise starts a new session.
+    """
     kernel, registry, provider, ctx = await _setup_runtime(
         model=model,
         permission_mode=permission_mode,
     )
 
-    messages: list[Message] = [
-        Message(role=Role.SYSTEM, content=SYSTEM_PROMPT),
-    ]
+    compaction = CompactionEngine()
 
     try:
+        # Load or create conversation context
+        conversation: ConversationContext | None = None
+        if resume_session:
+            conversation = await ConversationContext.load(resume_session, kernel.state)
+            if conversation:
+                conversation.sanitize()
+                console.print(f"[dim]Resumed session {resume_session[:8]} ({len(conversation.messages)} messages)[/]")
+            else:
+                console.print(f"[yellow]Session {resume_session} not found, starting new.[/]")
+
+        if conversation is None:
+            conversation = ConversationContext(
+                session_id=ctx.session_id,
+                system_prompt=SYSTEM_PROMPT,
+                model=model or DEFAULT_MODEL,
+            )
+            conversation.ensure_system_message()
+            # Register the session in state
+            await kernel.state.create_session(
+                ctx.session_id,
+                workspace=str(ctx.workspace) if ctx.workspace else None,
+            )
+
         while True:
             try:
                 user_input = console.input("[bold blue]You>[/] ")
@@ -161,23 +201,25 @@ async def run_interactive_async(
                 continue
 
             if user_input.strip().startswith("/"):
-                if _handle_slash_command(user_input.strip(), messages):
+                if _handle_slash_command(user_input.strip(), conversation):
                     break
                 continue
 
-            messages.append(Message(role=Role.USER, content=user_input))
+            conversation.add_message(Message(role=Role.USER, content=user_input))
 
             # Show assistant response
             console.print("[bold green]Octopus>[/] ", end="", highlight=False)
 
             collected: list[str] = []
             async for event in run_query(
-                messages,
+                conversation.messages,
                 provider,
                 kernel,
                 registry,
                 ctx,
                 model=model or DEFAULT_MODEL,
+                conversation=conversation,
+                compaction=compaction,
             ):
                 if event.type == StreamEventType.TEXT:
                     collected.append(event.text or "")
@@ -193,6 +235,8 @@ async def run_interactive_async(
                         console.print(
                             f"\n[dim]⚙ {tc.name}({args_preview})[/]", highlight=False
                         )
+                elif event.type == StreamEventType.STATUS:
+                    console.print(f"\n[dim]{event.text}[/]", highlight=False)
                 elif event.type == StreamEventType.ERROR:
                     console.print(f"\n[red]Error: {event.error}[/]")
                 elif event.type == StreamEventType.DONE:
@@ -202,11 +246,14 @@ async def run_interactive_async(
                 console.print()  # Final newline
             console.print()  # Blank line between turns
 
+            # Persist conversation after each turn
+            await conversation.save(kernel.state)
+
     finally:
         await kernel.shutdown()
 
 
-def _handle_slash_command(command: str, messages: list[Message]) -> bool:
+def _handle_slash_command(command: str, conversation: ConversationContext) -> bool:
     """Handle slash commands. Returns True if should exit."""
     cmd = command.lower()
     if cmd in ("/exit", "/quit", "/q"):
@@ -216,9 +263,13 @@ def _handle_slash_command(command: str, messages: list[Message]) -> bool:
         console.clear()
         return False
     if cmd == "/reset":
-        messages.clear()
-        messages.append(Message(role=Role.SYSTEM, content=SYSTEM_PROMPT))
+        conversation.clear()
+        conversation.ensure_system_message()
         console.print("[dim]Conversation reset.[/]")
+        return False
+    if cmd == "/tokens":
+        tokens = conversation.estimate_tokens()
+        console.print(f"[dim]Estimated tokens: {tokens:,}[/]")
         return False
     if cmd == "/help":
         console.print(
@@ -227,12 +278,44 @@ def _handle_slash_command(command: str, messages: list[Message]) -> bool:
                 "- `/help` — Show this help\n"
                 "- `/clear` — Clear screen\n"
                 "- `/reset` — Reset conversation history\n"
+                "- `/tokens` — Show estimated token count\n"
                 "- `/exit` — Exit interactive mode\n"
             )
         )
         return False
     console.print(f"[red]Unknown command:[/] {command}")
     return False
+
+
+async def session_resume_async(
+    session_id: str,
+    *,
+    model: str | None = None,
+    permission_mode: str = "default",
+) -> None:
+    """Resume a previous session by ID."""
+    db_path = _get_db_path()
+    if not db_path.exists():
+        console.print("[red]No database found. Run `octopus cli` first.[/]")
+        return
+
+    await run_interactive_async(
+        model=model,
+        permission_mode=permission_mode,
+        resume_session=session_id,
+    )
+
+
+async def session_new_async(
+    *,
+    model: str | None = None,
+    permission_mode: str = "default",
+) -> None:
+    """Start a new session (same as interactive mode, explicitly new)."""
+    await run_interactive_async(
+        model=model,
+        permission_mode=permission_mode,
+    )
 
 
 async def show_audit_logs_async(
@@ -285,7 +368,7 @@ async def show_audit_logs_async(
 
 
 async def list_sessions_async() -> None:
-    """List all sessions."""
+    """List all sessions with message counts."""
     from octopus.core.state import StateManager
 
     db_path = _get_db_path()
@@ -305,6 +388,7 @@ async def list_sessions_async() -> None:
         table = Table(title="Sessions")
         table.add_column("ID", style="cyan")
         table.add_column("Name")
+        table.add_column("Messages", justify="right")
         table.add_column("Created")
         table.add_column("Last Active")
 
@@ -313,7 +397,15 @@ async def list_sessions_async() -> None:
             last = (
                 s.last_activity.strftime("%Y-%m-%d %H:%M") if s.last_activity else "—"
             )
-            table.add_row(s.session_id[:8], s.name or "(unnamed)", created, last)
+            # Count messages from context
+            msg_count = len(s.context.get("messages", []))
+            table.add_row(
+                s.session_id[:8],
+                s.name or "(unnamed)",
+                str(msg_count),
+                created,
+                last,
+            )
 
         console.print(table)
     finally:

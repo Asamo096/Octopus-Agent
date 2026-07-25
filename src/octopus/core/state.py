@@ -1,7 +1,8 @@
 """Octopus Agent State — Async state manager backed by SQLite.
 
-Manages sessions, configuration, and metadata.  Both GUI and CLI share the
-same SQLite database, enabling cross-process state synchronization.
+Manages sessions, configuration, metadata, and conversation messages.
+Both GUI and CLI share the same SQLite database, enabling cross-process
+state synchronization.
 """
 
 from __future__ import annotations
