@@ -230,11 +230,12 @@ async def run_interactive_async(
                 workspace=str(ctx.workspace) if ctx.workspace else None,
             )
 
-        # Display banner
+        # Display banner — show resumed session ID if resuming
+        display_session_id = resume_session if resume_session else ctx.session_id
         display_banner(
             model=model or DEFAULT_MODEL,
             workspace=str(ctx.workspace),
-            session_id=ctx.session_id,
+            session_id=display_session_id,
             permission_mode=permission_mode,
         )
 
@@ -261,7 +262,7 @@ async def run_interactive_async(
                 )
             except (EOFError, KeyboardInterrupt):
                 console.print("\n[dim]Goodbye![/]")
-                console.print(f"[dim]octopus session resume {ctx.session_id}[/]")
+                console.print(f"[dim]octopus -c {display_session_id}[/]")
                 break
             print_separator()
 
