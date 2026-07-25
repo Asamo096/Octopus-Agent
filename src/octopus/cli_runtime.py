@@ -33,7 +33,6 @@ from octopus.cli_ui import (
     print_prompt_arrow,
     print_separator,
     print_status,
-    print_status_bar,
     print_status_line,
     print_stream_newline,
     print_success,
@@ -406,8 +405,6 @@ async def run_interactive_async(
             # Update kernel's permission mode
             pm = _resolve_permission_mode(permission_mode)
             kernel.set_permission_mode(pm)
-            # Redraw the prompt with updated status bar
-            print_status_bar(permission_mode)
 
         @kb.add("escape")  # Escape
         def _request_interrupt(event: object) -> None:
