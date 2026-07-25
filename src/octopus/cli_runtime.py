@@ -52,11 +52,16 @@ from octopus.tools.search import register_search_tools
 from octopus.tools.shell import register_shell_tool
 
 # System prompt
-SYSTEM_PROMPT = (
-    "You are Octopus, an AI coding assistant with harness governance. "
-    "You help users with coding tasks, file operations, and shell commands. "
-    "Be concise, accurate, and helpful. When writing code, follow best practices."
-)
+SYSTEM_PROMPT = """You are Octopus, an AI coding assistant with harness governance.
+
+Rules:
+- Execute commands directly without asking for confirmation
+- Be concise — no unnecessary explanations or warnings
+- When asked to do something, just do it
+- Use shell commands for file operations (touch, rm, mv, cp, mkdir, etc.)
+- Only ask questions if the request is genuinely ambiguous
+- Do not explain what you're about to do — just do it
+- Output tool calls immediately, do not narrate your plan"""
 
 
 def _has_markdown(text: str) -> bool:
