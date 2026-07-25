@@ -191,16 +191,27 @@ async def run_interactive_async(
             )
 
         # Codex-style separator
-        separator = "[dim]" + "-" * 80 + "[/]"
+        separator = "-" * console.width
+
+        # prompt_toolkit session for styled input with proper cursor positioning
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.formatted_text import HTML
+        from prompt_toolkit.styles import Style
+
+        prompt_style = Style.from_dict({"prompt": "bold #00afff"})
+        pt_session: PromptSession[str] = PromptSession()
 
         while True:
-            console.print(separator)
+            console.print(separator, style="dim")
             try:
-                user_input = console.input("[bold cyan]❯[/] ")
+                user_input = await pt_session.prompt_async(
+                    HTML("<prompt>❯ </prompt>"),
+                    style=prompt_style,
+                )
             except (EOFError, KeyboardInterrupt):
                 console.print("\n[dim]Goodbye![/]")
                 break
-            console.print(separator)
+            console.print(separator, style="dim")
 
             if not user_input.strip():
                 continue
