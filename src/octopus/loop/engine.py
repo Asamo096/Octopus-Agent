@@ -281,7 +281,7 @@ def _parse_xml_tool_calls(text: str) -> list[ToolCallDelta]:
         if not name_match:
             continue
         tool_name = name_match.group(1).strip()
-        args_match = re.search(r"<arguments>\s*(.*?)\s*</arguments>", block, re.DOTALL)
+        args_match = re.search(r"<(?:arguments|tool_input)>\s*(.*?)\s*</(?:arguments|tool_input)>", block, re.DOTALL)
         args_str = args_match.group(1).strip() if args_match else "{}"
         try:
             json.loads(args_str)
