@@ -242,14 +242,16 @@ def slash_autocomplete() -> str | None:
 
     Returns the selected command string, or None if cancelled.
     """
+    from prompt_toolkit.buffer import Buffer
     from prompt_toolkit.key_binding import KeyBindings
 
     # Filter commands based on input
-    filter_text = ""
     selected_index = 0
     result: str | None = None
+    filter_buffer = Buffer()
 
     def _get_filtered_commands() -> list[dict[str, str]]:
+        filter_text = filter_buffer.text
         if not filter_text:
             return SLASH_COMMANDS
         return [
@@ -287,29 +289,17 @@ def slash_autocomplete() -> str | None:
     def _cancel(event: object) -> None:
         event.app.exit(result=None)  # type: ignore
 
-    # Handle backspace to update filter
-    @kb.add("backspace")
-    def _backspace(event: object) -> None:
-        nonlocal filter_text, selected_index
-        if filter_text:
-            filter_text = filter_text[:-1]
-            selected_index = 0
+    # Reset selection when buffer changes
+    def _on_buffer_changed(event: object) -> None:
+        nonlocal selected_index
+        selected_index = 0
 
-    # Handle regular characters for filtering
-    @kb.add("any")
-    def _char(event: object) -> None:
-        nonlocal filter_text, selected_index
-        # Get the key pressed
-        key_event = event.key_sequence[0]  # type: ignore
-        if hasattr(key_event, 'key') and hasattr(key_event.key, 'data'):
-            ch = key_event.key.data
-            if ch and len(ch) == 1 and ch.isprintable():
-                filter_text += ch
-                selected_index = 0
+    filter_buffer.on_text_changed += _on_buffer_changed
 
     # Build the menu display
     def _build_menu_text() -> str:
         filtered = _get_filtered_commands()
+        filter_text = filter_buffer.text
         lines = ["", "  Commands:"]
         if filter_text:
             lines[0] = f"  Filter: {filter_text}"
@@ -326,7 +316,7 @@ def slash_autocomplete() -> str | None:
     from prompt_toolkit.application import Application
     from prompt_toolkit.layout import Layout
     from prompt_toolkit.layout.containers import HSplit, Window
-    from prompt_toolkit.layout.controls import FormattedTextControl
+    from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 
     class MenuControl(FormattedTextControl):
         def __init__(self) -> None:
@@ -335,7 +325,10 @@ def slash_autocomplete() -> str | None:
         def _get_text(self) -> str:
             return _build_menu_text()
 
-    layout = Layout(HSplit([Window(content=MenuControl())]))
+    layout = Layout(HSplit([
+        Window(content=MenuControl()),
+        Window(content=BufferControl(buffer=filter_buffer)),
+    ]))
 
     app: Application = Application(
         layout=layout,
