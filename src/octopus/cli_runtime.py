@@ -96,7 +96,7 @@ def _has_markdown(text: str) -> bool:
     return any(ind in text for ind in indicators)
 
 
-def _resolve_model(model_arg: str | None) -> str | None:
+def _resolve_model(model_arg: str | None) -> str:
     """Resolve model from argument, then config, then None.
 
     For custom providers with base_url, prefixes model with 'openai/'
@@ -107,7 +107,7 @@ def _resolve_model(model_arg: str | None) -> str | None:
     config = load_config()
     if config.model:
         return _prefix_model_for_litellm(config.model)
-    return None
+    return ""
 
 
 def _prefix_model_for_litellm(model: str) -> str:
@@ -320,7 +320,7 @@ async def run_interactive_async(
         else:
             console.print(f"\n[yellow]Permission required:[/yellow] {reason}")
 
-        pt = PromptSession()
+        pt: PromptSession[str] = PromptSession()
         try:
             response = await pt.prompt_async(
                 HTML("<prompt>Allow? (y/n): </prompt>"),

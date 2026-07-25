@@ -40,7 +40,7 @@ class CredentialStore:
     def _init_encryption(self) -> None:
         """Initialize Fernet encryption if available."""
         try:
-            from cryptography.fernet import Fernet
+            from cryptography.fernet import Fernet  # type: ignore[import-not-found]
 
             key = self._derive_key()
             self._fernet = Fernet(key)

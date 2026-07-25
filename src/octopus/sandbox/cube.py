@@ -52,7 +52,7 @@ class CubeBackend:
     def _get_config(self) -> Any:
         """Build CubeSandbox Config from settings."""
         try:
-            from cubesandbox import Config
+            from cubesandbox import Config  # type: ignore[import-not-found]
         except ImportError as err:
             raise ImportError(
                 "cubesandbox package not installed. "

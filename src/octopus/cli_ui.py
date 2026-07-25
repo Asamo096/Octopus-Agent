@@ -201,7 +201,7 @@ def select_option(
         )
     )
 
-    app = Application(
+    app: Application = Application(
         layout=layout,
         key_bindings=kb,
         full_screen=False,
