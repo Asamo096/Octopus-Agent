@@ -196,7 +196,7 @@ async def run_interactive_async(
         while True:
             console.print(separator)
             try:
-                user_input = console.input("[bold cyan]>[/] ")
+                user_input = console.input("[bold cyan]❯[/] ")
             except (EOFError, KeyboardInterrupt):
                 console.print("\n[dim]Goodbye![/]")
                 break
@@ -215,7 +215,7 @@ async def run_interactive_async(
             conversation.add_message(Message(role=Role.USER, content=user_input))
 
             # Show assistant response
-            console.print("[bold]>[/] ", end="", highlight=False)
+            console.print("[bold]❯[/] ", end="", highlight=False)
 
             collected: list[str] = []
             async for event in run_query(
