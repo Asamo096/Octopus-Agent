@@ -74,19 +74,18 @@ def _resolve_model(model_arg: str | None) -> str | None:
 
 
 def _prefix_model_for_litellm(model: str) -> str:
-    """Prefix model name for litellm if using a custom provider with base_url.
+    """Prefix model name with MODEL_PROVIDER for litellm routing.
 
-    litellm needs 'openai/' prefix to route custom models through
-    the OpenAI-compatible API when a base_url is set.
+    If MODEL_PROVIDER is set (e.g., 'xiaommi_mimo'), model becomes
+    'xiaommi_mimo/mimo-v2.5' so litellm routes correctly.
     """
     # Don't prefix if already prefixed (e.g., 'openai/gpt-4o')
     if "/" in model:
         return model
 
     config = load_config()
-    provider = config.provider_config
-    if provider and provider.base_url:
-        return f"openai/{model}"
+    if config.model_provider:
+        return f"{config.model_provider}/{model}"
     return model
 
 
