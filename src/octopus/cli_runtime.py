@@ -518,7 +518,7 @@ def _handle_model_command(conversation: ConversationContext) -> None:
 
     pt_session: PromptSession[str] = PromptSession()
     try:
-        selection = pt_session.prompt_sync(
+        selection = pt_session.prompt(
             "Select model (number or name, Enter to cancel): ",
         )
     except (EOFError, KeyboardInterrupt):
