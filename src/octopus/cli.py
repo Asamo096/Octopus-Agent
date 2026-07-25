@@ -88,7 +88,6 @@ def cli(
             )
         )
     else:
-        display_banner(model=model, permission_mode=permission_mode)
         _run_async(run_interactive_async(model=model, permission_mode=permission_mode))
 
 
