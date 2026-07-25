@@ -282,7 +282,7 @@ async def run_interactive_async(
 
             # Handle slash commands
             if user_input.strip().startswith("/"):
-                if _handle_slash_command(
+                if await _handle_slash_command(
                     user_input.strip(),
                     conversation,
                     session_cost=session_cost,
@@ -376,7 +376,7 @@ async def run_interactive_async(
         await kernel.shutdown()
 
 
-def _handle_slash_command(
+async def _handle_slash_command(
     command: str,
     conversation: ConversationContext,
     *,
@@ -416,7 +416,7 @@ def _handle_slash_command(
         return False
 
     if cmd == "/model":
-        _handle_model_command(conversation)
+        await _handle_model_command(conversation)
         return False
 
     if cmd == "/config":
@@ -431,7 +431,7 @@ def _handle_slash_command(
     return False
 
 
-def _handle_model_command(conversation: ConversationContext) -> None:
+async def _handle_model_command(conversation: ConversationContext) -> None:
     """Handle /model — fetch models from provider and list for selection.
 
     GET /v1/models from the configured provider base_url.
@@ -518,7 +518,7 @@ def _handle_model_command(conversation: ConversationContext) -> None:
 
     pt_session: PromptSession[str] = PromptSession()
     try:
-        selection = pt_session.prompt(
+        selection = await pt_session.prompt_async(
             "Select model (number or name, Enter to cancel): ",
         )
     except (EOFError, KeyboardInterrupt):
