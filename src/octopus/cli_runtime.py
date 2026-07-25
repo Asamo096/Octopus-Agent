@@ -74,16 +74,21 @@ def _resolve_model(model_arg: str | None) -> str | None:
 
 
 def _prefix_model_for_litellm(model: str) -> str:
-    """Prefix model name with MODEL_PROVIDER for litellm routing.
+    """Prefix model name for litellm routing.
 
-    If MODEL_PROVIDER is set (e.g., 'xiaommi_mimo'), model becomes
-    'xiaommi_mimo/mimo-v2.5' so litellm routes correctly.
+    When a custom base_url is set, pass model name as-is (litellm uses
+    base_url directly). Otherwise, use MODEL_PROVIDER as prefix.
     """
     # Don't prefix if already prefixed (e.g., 'openai/gpt-4o')
     if "/" in model:
         return model
 
     config = load_config()
+    # If there's a base_url, litellm will use it directly — no prefix needed
+    for p in config.model_providers.values():
+        if p.base_url:
+            return model
+    # No base_url — use model_provider as litellm prefix
     if config.model_provider:
         return f"{config.model_provider}/{model}"
     return model

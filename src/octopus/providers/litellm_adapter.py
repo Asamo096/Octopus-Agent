@@ -52,7 +52,7 @@ class LiteLLMProvider:
         if self._api_key:
             kwargs["api_key"] = self._api_key
         if self._base_url:
-            kwargs["api_base"] = self._base_url
+            kwargs["base_url"] = self._base_url
 
         # Accumulate tool calls across chunks
         tool_calls: dict[int, ToolCallDelta] = {}
