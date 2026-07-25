@@ -33,6 +33,7 @@ from octopus.cli_ui import (
     print_prompt_arrow,
     print_separator,
     print_status,
+    print_status_bar,
     print_status_line,
     print_stream_newline,
     print_success,
@@ -405,8 +406,8 @@ async def run_interactive_async(
             # Update kernel's permission mode
             pm = _resolve_permission_mode(permission_mode)
             kernel.set_permission_mode(pm)
-            # Update terminal split status bar
-            _update_status_bar()
+            # Redraw the prompt with updated status bar
+            print_status_bar(permission_mode)
 
         @kb.add("escape")  # Escape
         def _request_interrupt(event: object) -> None:
@@ -440,10 +441,21 @@ async def run_interactive_async(
                         )
                 return completions
 
+        # Status bar as persistent bottom toolbar
+
+        def _get_bottom_toolbar() -> list[tuple[str, str]]:
+            """Return bottom toolbar that stays fixed at terminal bottom."""
+            from octopus.cli_ui import get_status_bar_style, get_status_bar_text
+
+            text = get_status_bar_text(permission_mode)
+            style = get_status_bar_style(permission_mode)
+            return [(style, text)]
+
         pt_session: PromptSession[str] = PromptSession(
             key_bindings=kb,
             completer=SlashCompleter(),
             complete_while_typing=True,
+            bottom_toolbar=_get_bottom_toolbar,
         )
 
         # Session cost tracking
@@ -571,22 +583,6 @@ async def run_interactive_async(
             print_error(f"Unknown command: {command}")
             return False, conversation
 
-        # Set up split terminal with fixed status bar
-        from octopus.cli_ui import TerminalSplit
-
-        terminal_split = TerminalSplit()
-        terminal_split.setup()
-
-        # Update status bar function
-        def _update_status_bar() -> None:
-            terminal_split.update_status(
-                permission_mode,
-                model=_resolve_model(model) or "(none)",
-                session_id=display_session_id,
-            )
-
-        _update_status_bar()
-
         while True:
             print_separator()
             try:
@@ -595,7 +591,6 @@ async def run_interactive_async(
                     style=prompt_style,
                 )
             except (EOFError, KeyboardInterrupt):
-                terminal_split.cleanup()
                 console.print("\n[dim]Goodbye![/]")
                 console.print(f"[dim]octopus cli -c {display_session_id}[/]")
                 break
@@ -734,7 +729,6 @@ async def run_interactive_async(
             await conversation.save(kernel.state)
 
     finally:
-        terminal_split.cleanup()
         await kernel.shutdown()
 
 
