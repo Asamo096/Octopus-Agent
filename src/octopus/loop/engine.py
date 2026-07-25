@@ -127,7 +127,11 @@ async def run_query(
                     if code_calls:
                         collected_tool_calls = code_calls
                         import re
-                        cleaned = re.sub(r"```(?:bash|sh|shell)?\n.*?```", "", full_text, flags=re.DOTALL).strip()
+                        # Remove code blocks (with or without language tag, with or without closing ```)
+                        cleaned = re.sub(r"```(?:bash|sh|shell|zsh)?\n.*?(?:```|$)", "", full_text, flags=re.DOTALL)
+                        # Also remove stray ``` markers
+                        cleaned = re.sub(r"```", "", cleaned)
+                        cleaned = cleaned.strip()
                         collected_text.clear()
                         if cleaned:
                             collected_text.append(cleaned)
@@ -330,7 +334,8 @@ def _parse_code_block_calls(text: str) -> list[ToolCallDelta]:
     import re
 
     # Match code blocks with bash/sh/shell language tags or no tag
-    pattern = r"```(?:bash|sh|shell|zsh)?\n(.*?)```"
+    # Also handle blocks without closing ```
+    pattern = r"```(?:bash|sh|shell|zsh)?\n(.*?)(?:```|$)"
     matches = re.findall(pattern, text, re.DOTALL)
 
     calls: list[ToolCallDelta] = []
