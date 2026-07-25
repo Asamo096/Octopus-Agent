@@ -670,53 +670,35 @@ async def _handle_model_command(conversation: ConversationContext) -> None:
     # Sort by id
     models.sort(key=lambda m: m["id"])
 
-    # Display models
-    from rich.table import Table
-
-    table = Table(title=f"Available Models ({provider.name or config.model_provider})")
-    table.add_column("#", style="dim", width=4)
-    table.add_column("Model", style="info")
-    table.add_column("Owner", style="dim")
-
+    # Build selection options
     current_model = config.model
-    for i, m in enumerate(models, 1):
-        marker = " *" if m["id"] == current_model else ""
-        table.add_row(str(i), f"{m['id']}{marker}", m.get("owned_by", ""))
+    model_ids = [m["id"] for m in models]
 
-    console.print(table)
-    console.print()
+    # Find initial selection index
+    initial_index = 0
+    if current_model and current_model in model_ids:
+        initial_index = model_ids.index(current_model)
 
-    if current_model:
-        console.print(f"[dim]Current: {current_model} (* = selected)[/]")
-    console.print()
+    # Use arrow key selection
+    from octopus.cli_ui import select_option
 
-    # Prompt for selection
-    from prompt_toolkit import PromptSession
+    selected_model = select_option(
+        model_ids,
+        title=f"Available Models ({provider.name or config.model_provider})",
+        initial_index=initial_index,
+    )
 
-    pt_session: PromptSession[str] = PromptSession()
-    try:
-        selection = await pt_session.prompt_async(
-            "Select model (number or name, Enter to cancel): ",
-        )
-    except (EOFError, KeyboardInterrupt):
-        return
-
-    selection = selection.strip()
-    if not selection:
+    if not selected_model:
         return
 
     # Resolve selection
-    selected_model: str | None = None
-    if selection.isdigit():
-        idx = int(selection) - 1
+    if selected_model.isdigit():
+        idx = int(selected_model) - 1
         if 0 <= idx < len(models):
             selected_model = models[idx]["id"]
         else:
-            print_error(f"Invalid number: {selection}")
+            print_error(f"Invalid number: {selected_model}")
             return
-    else:
-        # Match by name (exact or prefix)
-        matches = [m for m in models if m["id"] == selection or m["id"].startswith(selection)]
         if len(matches) == 1:
             selected_model = matches[0]["id"]
         elif len(matches) > 1:

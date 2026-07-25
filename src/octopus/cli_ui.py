@@ -99,6 +99,94 @@ def _shorten_model(model: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Arrow Key Selection Menu
+# ---------------------------------------------------------------------------
+
+def select_option(
+    options: list[str],
+    *,
+    title: str | None = None,
+    initial_index: int = 0,
+) -> str | None:
+    """Display a selection menu with arrow key navigation.
+
+    Args:
+        options: List of string options to select from
+        title: Optional title to display above options
+        initial_index: Index of initially selected option
+
+    Returns:
+        Selected option string, or None if cancelled
+    """
+    import sys
+    import termios
+    import tty
+
+    if not options:
+        return None
+
+    selected_index = initial_index
+
+    # Hide cursor
+    sys.stdout.write("\033[?25l")
+    sys.stdout.flush()
+
+    try:
+        while True:
+            # Render menu
+            if title:
+                console.print(f"\n  [accent]{title}[/]")
+                console.print()
+
+            for i, opt in enumerate(options):
+                if i == selected_index:
+                    console.print(f"  [bold cyan]>[/] [bold]{opt}[/]")
+                else:
+                    console.print(f"    [dim]{opt}[/]")
+
+            console.print()
+            console.print("  [dim][up/down] Navigate  [enter] Confirm  [esc] Cancel[/]")
+
+            # Wait for keypress (raw mode)
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            try:
+                tty.setraw(fd)
+                ch = sys.stdin.read(1)
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+            if ch == "\x1b":  # ESC sequence
+                ch2 = sys.stdin.read(1)
+                if ch2 == "[":
+                    ch3 = sys.stdin.read(1)
+                    if ch3 == "A":  # Up arrow
+                        selected_index = (selected_index - 1) % len(options)
+                    elif ch3 == "B":  # Down arrow
+                        selected_index = (selected_index + 1) % len(options)
+                else:
+                    # ESC alone -- cancel
+                    return None
+            elif ch == "\r" or ch == "\n":  # Enter
+                return options[selected_index]
+            elif ch == "\x03":  # Ctrl+C
+                return None
+
+            # Clear the menu for re-render
+            lines_to_clear = len(options) + 3  # options + blank + help
+            if title:
+                lines_to_clear += 2  # title + blank
+            for _ in range(lines_to_clear):
+                sys.stdout.write("\033[1A")  # Move up one line
+                sys.stdout.write("\033[2K")  # Clear line
+
+    finally:
+        # Show cursor
+        sys.stdout.write("\033[?25h")
+        sys.stdout.flush()
+
+
+# ---------------------------------------------------------------------------
 # Separator & Prompt
 # ---------------------------------------------------------------------------
 
