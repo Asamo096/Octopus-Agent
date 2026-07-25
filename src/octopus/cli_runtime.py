@@ -390,6 +390,9 @@ async def run_interactive_async(
             nonlocal _current_mode_index, permission_mode
             _current_mode_index = (_current_mode_index + 1) % len(_MODE_CYCLE)
             permission_mode = _MODE_CYCLE[_current_mode_index]
+            # Update kernel's permission mode
+            pm = _resolve_permission_mode(permission_mode)
+            kernel.set_permission_mode(pm)
             # Redraw the prompt with updated status bar
             print_status_bar(permission_mode)
 

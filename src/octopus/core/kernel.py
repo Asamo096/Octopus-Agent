@@ -226,26 +226,37 @@ class Kernel:
                 output=None,
                 error=f"Permission denied: {perm_result.reason}",
             )
-        if (
-            perm_result.requires_approval
-            and ctx.permission_mode == PermissionMode.DEFAULT
-        ):
-            # Prompt user for approval if callback is set
-            if self._permission_prompt is not None:
-                approved = await self._permission_prompt(
-                    tool_call.tool_name,
-                    tool_call.arguments,
-                    perm_result.reason or "Approval required",
-                )
-                if not approved:
+        if perm_result.requires_approval:
+            # In FULL_AUTO mode, auto-approve
+            if self.permission_mode == PermissionMode.FULL_AUTO:
+                pass  # Auto-approve
+            # In DEFAULT mode, prompt user for approval
+            elif self.permission_mode == PermissionMode.DEFAULT:
+                if self._permission_prompt is not None:
+                    approved = await self._permission_prompt(
+                        tool_call.tool_name,
+                        tool_call.arguments,
+                        perm_result.reason or "Approval required",
+                    )
+                    if not approved:
+                        duration = time.monotonic() - start_time
+                        await self._log_audit(tool_call, ctx, None, duration, "USER_DENIED")
+                        return ToolResult(
+                            success=False,
+                            output=None,
+                            error="Permission denied by user",
+                        )
+                # If no prompt callback, auto-approve (for non-interactive mode)
+            # In PLAN mode, block write operations
+            elif self.permission_mode == PermissionMode.PLAN:
+                if self._is_write_tool(tool_call.tool_name):
                     duration = time.monotonic() - start_time
-                    await self._log_audit(tool_call, ctx, None, duration, "USER_DENIED")
+                    await self._log_audit(tool_call, ctx, None, duration, "PLAN_BLOCKED")
                     return ToolResult(
                         success=False,
                         output=None,
-                        error="Permission denied by user",
+                        error="Write operations blocked in plan mode",
                     )
-            # If no prompt callback, auto-approve (for non-interactive mode)
 
         # ---- Step 3: Sandbox validation ----
         if tool_call.tool_name in ("write_file", "edit_file", "shell"):
@@ -296,6 +307,14 @@ class Kernel:
         return result
 
     # ---- internal helpers -------------------------------------------------
+
+    def _is_write_tool(self, tool_name: str) -> bool:
+        """Check if a tool performs write operations."""
+        return tool_name in ("write_file", "edit_file", "shell")
+
+    def set_permission_mode(self, mode: PermissionMode) -> None:
+        """Update the kernel's permission mode."""
+        self.permission_mode = mode
 
     def _sandbox_check(self, tool_call: ToolCall, ctx: Context) -> tuple[bool, str]:
         """Run sandbox validation. Returns (ok, reason)."""
