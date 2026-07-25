@@ -295,6 +295,7 @@ async def run_single_prompt_async(
         await conversation.save(kernel.state)
 
     finally:
+        terminal_split.cleanup()
         await kernel.shutdown()
 
 
@@ -406,8 +407,8 @@ async def run_interactive_async(
             # Update kernel's permission mode
             pm = _resolve_permission_mode(permission_mode)
             kernel.set_permission_mode(pm)
-            # Redraw the prompt with updated status bar
-            print_status_bar(permission_mode)
+            # Update terminal split status bar
+            _update_status_bar()
 
         @kb.add("escape")  # Escape
         def _request_interrupt(event: object) -> None:
@@ -572,153 +573,168 @@ async def run_interactive_async(
             print_error(f"Unknown command: {command}")
             return False, conversation
 
-        while True:
-            # Show status bar before prompt
-            print_status_bar(permission_mode)
+        # Set up split terminal with fixed status bar
+        from octopus.cli_ui import TerminalSplit
 
-            print_separator()
-            try:
-                user_input = await pt_session.prompt_async(
-                    HTML("<prompt>❯ </prompt>"),
-                    style=prompt_style,
-                )
-            except (EOFError, KeyboardInterrupt):
-                console.print("\n[dim]Goodbye![/]")
-                console.print(f"[dim]octopus cli -c {display_session_id}[/]")
-                break
-            print_separator()
+        terminal_split = TerminalSplit()
+        terminal_split.setup()
 
-            if not user_input.strip():
-                continue
-
-            # Handle slash commands
-            if user_input.strip().startswith("/"):
-                should_exit, conversation = await _handle_slash_command(
-                    user_input.strip(),
-                    conversation,
-                )
-                if should_exit:
-                    break
-                continue
-
-            # Add user message
-            conversation.add_message(Message(role=Role.USER, content=user_input))
-            console.print()
-
-            # Print assistant response arrow
-            print_prompt_arrow()
-
-            # Track turn stats
-            turn_start = time.monotonic()
-            turn_tool_calls = 0
-            collected_text: list[str] = []
-
-            # Track tool calls for display
-            current_tool = None
-
-            # Reset interrupt flag at start of each turn
-            _interrupt_requested = False
-
-            # Show thinking spinner while waiting for first token
-            _first_content_arrived = False
-            with Live(
-                console.status("[dim]Thinking...[/]", spinner="dots"),
-                console=console,
-                refresh_per_second=8,
-                transient=True,
-            ) as live:
-                async for event in run_query(
-                    conversation.messages,
-                    provider,
-                    kernel,
-                    registry,
-                    ctx,
-                    model=_resolve_model(model),
-                    conversation=conversation,
-                    compaction=compaction,
-                ):
-                    # Check for interrupt request (Escape key)
-                    if _interrupt_requested:
-                        live.stop()
-                        console.print("\n[dim]Interrupted.[/]")
-                        break
-
-                    # Stop spinner on first content event
-                    if not _first_content_arrived and event.type in (
-                        StreamEventType.TEXT,
-                        StreamEventType.TOOL_CALL,
-                    ):
-                        _first_content_arrived = True
-                        live.stop()
-
-                    if event.type == StreamEventType.TEXT:
-                        collected_text.append(event.text or "")
-
-                    elif event.type == StreamEventType.TOOL_CALL:
-                        tc = event.tool_call
-                        if tc:
-                            turn_tool_calls += 1
-                            session_tool_calls += 1
-                            # Finish previous tool if still open
-                            if current_tool is not None:
-                                print_tool_call_result(current_tool, "")
-                            # Print new tool with newline prefix
-                            console.print()
-                            current_tool = print_tool_call_start(tc.name, tc.arguments)
-
-                    elif event.type == StreamEventType.STATUS:
-                        if not _first_content_arrived:
-                            live.stop()
-                            _first_content_arrived = True
-                        print_status(event.text or "")
-
-                    elif event.type == StreamEventType.ERROR:
-                        live.stop()
-                        print_error(event.error or "Unknown error")
-
-                    elif event.type == StreamEventType.DONE:
-                        pass
-
-            # Close any unclosed tool
-            if current_tool is not None:
-                print_tool_call_result(current_tool, "")
-
-            # Render response as markdown (strip XML tool calls first)
-            if collected_text:
-                full_text = "".join(collected_text)
-                # Strip XML tool calls and model artifacts
-                import re
-
-                full_text = re.sub(
-                    r"<tool_call>.*?</tool_call>", "", full_text, flags=re.DOTALL
-                )
-                full_text = re.sub(
-                    r"<function=.*?>.*?</function>", "", full_text, flags=re.DOTALL
-                )
-                full_text = re.sub(
-                    r"<thinking>.*?</thinking>", "", full_text, flags=re.DOTALL
-                )
-                full_text = re.sub(
-                    r"<tool_result>.*?</tool_result>", "", full_text, flags=re.DOTALL
-                )
-                full_text = re.sub(r"<\|.*?\|>", "", full_text)
-                full_text = full_text.strip()
-                if full_text:
-                    console.print()
-                    print_assistant_markdown(full_text)
-
-            # Print turn status line
-            duration_ms = int((time.monotonic() - turn_start) * 1000)
-            stats = TurnStats(
-                duration_ms=duration_ms,
-                model=_resolve_model(model),
-                tool_calls=turn_tool_calls,
+        # Update status bar function
+        def _update_status_bar() -> None:
+            terminal_split.update_status(
+                permission_mode,
+                model=_resolve_model(model) or "(none)",
+                session_id=display_session_id,
             )
-            print_status_line(stats)
-            console.print()  # Blank line between turns
 
-            # Persist conversation after each turn
-            await conversation.save(kernel.state)
+        _update_status_bar()
+
+        try:
+            while True:
+                print_separator()
+                try:
+                    user_input = await pt_session.prompt_async(
+                        HTML("<prompt>❯ </prompt>"),
+                        style=prompt_style,
+                    )
+                except (EOFError, KeyboardInterrupt):
+                    terminal_split.cleanup()
+                    console.print("\n[dim]Goodbye![/]")
+                    console.print(f"[dim]octopus cli -c {display_session_id}[/]")
+                    break
+                print_separator()
+
+                if not user_input.strip():
+                    continue
+
+                # Handle slash commands
+                if user_input.strip().startswith("/"):
+                    should_exit, conversation = await _handle_slash_command(
+                        user_input.strip(),
+                        conversation,
+                    )
+                    if should_exit:
+                        break
+                    continue
+
+                # Add user message
+                conversation.add_message(Message(role=Role.USER, content=user_input))
+                console.print()
+
+                # Print assistant response arrow
+                print_prompt_arrow()
+
+                # Track turn stats
+                turn_start = time.monotonic()
+                turn_tool_calls = 0
+                collected_text: list[str] = []
+
+                # Track tool calls for display
+                current_tool = None
+
+                # Reset interrupt flag at start of each turn
+                _interrupt_requested = False
+
+                # Show thinking spinner while waiting for first token
+                _first_content_arrived = False
+                with Live(
+                    console.status("[dim]Thinking...[/]", spinner="dots"),
+                    console=console,
+                    refresh_per_second=8,
+                    transient=True,
+                ) as live:
+                    async for event in run_query(
+                        conversation.messages,
+                        provider,
+                        kernel,
+                        registry,
+                        ctx,
+                        model=_resolve_model(model),
+                        conversation=conversation,
+                        compaction=compaction,
+                    ):
+                        # Check for interrupt request (Escape key)
+                        if _interrupt_requested:
+                            live.stop()
+                            console.print("\n[dim]Interrupted.[/]")
+                            break
+
+                        # Stop spinner on first content event
+                        if not _first_content_arrived and event.type in (
+                            StreamEventType.TEXT,
+                            StreamEventType.TOOL_CALL,
+                        ):
+                            _first_content_arrived = True
+                            live.stop()
+
+                        if event.type == StreamEventType.TEXT:
+                            collected_text.append(event.text or "")
+
+                        elif event.type == StreamEventType.TOOL_CALL:
+                            tc = event.tool_call
+                            if tc:
+                                turn_tool_calls += 1
+                                session_tool_calls += 1
+                                # Finish previous tool if still open
+                                if current_tool is not None:
+                                    print_tool_call_result(current_tool, "")
+                                # Print new tool with newline prefix
+                                console.print()
+                                current_tool = print_tool_call_start(tc.name, tc.arguments)
+
+                        elif event.type == StreamEventType.STATUS:
+                            if not _first_content_arrived:
+                                live.stop()
+                                _first_content_arrived = True
+                            print_status(event.text or "")
+
+                        elif event.type == StreamEventType.ERROR:
+                            live.stop()
+                            print_error(event.error or "Unknown error")
+
+                        elif event.type == StreamEventType.DONE:
+                            pass
+
+                # Close any unclosed tool
+                if current_tool is not None:
+                    print_tool_call_result(current_tool, "")
+
+                # Render response as markdown (strip XML tool calls first)
+                if collected_text:
+                    full_text = "".join(collected_text)
+                    # Strip XML tool calls and model artifacts
+                    import re
+
+                    full_text = re.sub(
+                        r"<tool_call>.*?</tool_call>", "", full_text, flags=re.DOTALL
+                    )
+                    full_text = re.sub(
+                        r"<function=.*?>.*?</function>", "", full_text, flags=re.DOTALL
+                    )
+                    full_text = re.sub(
+                        r"<thinking>.*?</thinking>", "", full_text, flags=re.DOTALL
+                    )
+                    full_text = re.sub(
+                        r"<tool_result>.*?</tool_result>", "", full_text, flags=re.DOTALL
+                    )
+                    full_text = re.sub(r"<\|.*?\|>", "", full_text)
+                    full_text = full_text.strip()
+                    if full_text:
+                        console.print()
+                        print_assistant_markdown(full_text)
+
+                # Print turn status line
+                duration_ms = int((time.monotonic() - turn_start) * 1000)
+                stats = TurnStats(
+                    duration_ms=duration_ms,
+                    model=_resolve_model(model),
+                    tool_calls=turn_tool_calls,
+                )
+                print_status_line(stats)
+                console.print()  # Blank line between turns
+
+                # Persist conversation after each turn
+                await conversation.save(kernel.state)
 
     finally:
         await kernel.shutdown()
@@ -1535,10 +1551,7 @@ async def show_audit_logs_async(
                 f"[{decision_style}]{e.permission_decision}[/]",
                 f"{e.duration:.3f}s",
                 args_str,
-            )
-
-        console.print(table)
-    finally:
+          ally:
         await audit.close()
 
 

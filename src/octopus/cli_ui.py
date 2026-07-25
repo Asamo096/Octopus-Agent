@@ -937,3 +937,139 @@ def print_status_bar(permission_mode: str = "default") -> None:
         f"\n[{color}]{icon}[/{color}] [{color}]{label}[/{color}] [dim]· {hint} · ← for agents[/dim]",
         highlight=False,
     )
+
+
+# ---------------------------------------------------------------------------
+# Terminal Split Screen Manager
+# ---------------------------------------------------------------------------
+
+
+class TerminalSplit:
+    """Manages a split terminal with fixed status bar at bottom.
+
+    Uses ANSI escape sequences to create a scroll region above
+    a fixed status line at the bottom of the terminal.
+
+    Usage:
+        split = TerminalSplit()
+        split.setup()           # Initialize split screen
+        split.print_status_bar(...)  # Update bottom bar
+        split.cleanup()         # Restore terminal on exit
+    """
+
+    def __init__(self) -> None:
+        self._rows: int = 0
+        self._cols: int = 0
+        self._active: bool = False
+
+    def _get_terminal_size(self) -> tuple[int, int]:
+        """Get terminal rows and columns."""
+        import shutil
+
+        size = shutil.get_terminal_size()
+        return size.lines, size.columns
+
+    def setup(self) -> None:
+        """Set up split terminal with scroll region."""
+        import sys
+
+        self._rows, self._cols = self._get_terminal_size()
+        if self._rows < 3:
+            return
+
+        # Set scroll region: rows 1 to (rows-2), leaving last 2 rows for status
+        scroll_bottom = self._rows - 2
+        sys.stdout.write(f"\033[1;{scroll_bottom}r")  # Set scroll region
+        sys.stdout.write(f"\033[{self._rows};1H")      # Move cursor to bottom
+        sys.stdout.write("\033[2K")                      # Clear status line
+        sys.stdout.write(f"\033[{self._rows - 1};1H")  # Move to second-to-last
+        sys.stdout.write("\033[2K")                      # Clear separator line
+        sys.stdout.write("\033[1;1H")                    # Move cursor to top
+        sys.stdout.flush()
+        self._active = True
+
+    def cleanup(self) -> None:
+        """Restore terminal to normal mode."""
+        import sys
+
+        if not self._active:
+            return
+
+        # Reset scroll region to full screen
+        sys.stdout.write(f"\033[1;{self._rows}r")
+        sys.stdout.write(f"\033[{self._rows};1H")
+        sys.stdout.flush()
+        self._active = False
+
+    def update_status(
+        self,
+        permission_mode: str = "default",
+        *,
+        model: str = "",
+        session_id: str = "",
+        extra_info: str = "",
+    ) -> None:
+        """Update the fixed status bar at the bottom."""
+        import sys
+
+        if not self._active:
+            return
+
+        mode_info = _MODE_DISPLAY.get(permission_mode, _MODE_DISPLAY["default"])
+        icon = mode_info["icon"]
+        label = mode_info["label"]
+        color = mode_info["color"]
+        hint = mode_info["hint"]
+
+        # Build status line
+        status_parts = [
+            f"{icon} {label}",
+            f"· {hint}",
+            "· ← for agents",
+        ]
+        if model:
+            status_parts.insert(0, f"model: {model}")
+        if session_id:
+            status_parts.append(f"· session: {session_id[:8]}")
+        if extra_info:
+            status_parts.append(f"· {extra_info}")
+
+        status_text = " ".join(status_parts)
+
+        # Save cursor position, move to status line, print, restore
+        sys.stdout.write("\0337")                          # Save cursor
+        sys.stdout.write(f"\033[{self._rows};1H")          # Move to bottom
+        sys.stdout.write("\033[2K")                         # Clear line
+
+        # Apply color based on mode
+        color_codes = {
+            "yellow": "\033[33m",
+            "blue": "\033[34m",
+            "green": "\033[32m",
+            "cyan": "\033[36m",
+        }
+        color_code = color_codes.get(color, "\033[37m")
+        sys.stdout.write(f"{color_code}{status_text}\033[0m")
+
+        # Print separator line above status
+        sys.stdout.write(f"\033[{self._rows - 1};1H")
+        sys.stdout.write("\033[2K")
+        sys.stdout.write(f"\033[90m{'─' * self._cols}\033[0m")  # Dim separator
+
+        sys.stdout.write("\0338")                          # Restore cursor
+        sys.stdout.flush()
+
+    def clear_status(self) -> None:
+        """Clear the status bar area."""
+        import sys
+
+        if not self._active:
+            return
+
+        sys.stdout.write("\0337")                          # Save cursor
+        sys.stdout.write(f"\033[{self._rows - 1};1H")      # Move to separator
+        sys.stdout.write("\033[2K")                         # Clear separator
+        sys.stdout.write(f"\033[{self._rows};1H")          # Move to status
+        sys.stdout.write("\033[2K")                         # Clear status
+        sys.stdout.write("\0338")                          # Restore cursor
+        sys.stdout.flush()
