@@ -60,11 +60,34 @@ SYSTEM_PROMPT = (
 
 
 def _resolve_model(model_arg: str | None) -> str | None:
-    """Resolve model from argument, then config, then None."""
+    """Resolve model from argument, then config, then None.
+
+    For custom providers with base_url, prefixes model with 'openai/'
+    so litellm routes to the OpenAI-compatible API.
+    """
     if model_arg:
-        return model_arg
+        return _prefix_model_for_litellm(model_arg)
     config = load_config()
-    return config.model if config.model else None
+    if config.model:
+        return _prefix_model_for_litellm(config.model)
+    return None
+
+
+def _prefix_model_for_litellm(model: str) -> str:
+    """Prefix model name for litellm if using a custom provider with base_url.
+
+    litellm needs 'openai/' prefix to route custom models through
+    the OpenAI-compatible API when a base_url is set.
+    """
+    # Don't prefix if already prefixed (e.g., 'openai/gpt-4o')
+    if "/" in model:
+        return model
+
+    config = load_config()
+    provider = config.provider_config
+    if provider and provider.base_url:
+        return f"openai/{model}"
+    return model
 
 
 def _get_db_path() -> Path:
@@ -105,7 +128,15 @@ async def _setup_runtime(
     register_diff_tools(registry, kernel)
     register_search_tools(registry, kernel)
 
-    provider = LiteLLMProvider()
+    # Load provider config from auth.json + config.toml
+    config = load_config()
+    auth = load_auth()
+    provider_config = config.provider_config
+
+    api_key = auth.openai_api_key
+    base_url = provider_config.base_url if provider_config else None
+
+    provider = LiteLLMProvider(api_key=api_key, base_url=base_url)
 
     ctx = Context(
         session_id=str(uuid.uuid4()),
