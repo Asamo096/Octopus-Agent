@@ -1,18 +1,37 @@
 """CLI runtime — async helpers that wire the agent loop to the CLI.
 
 This module bridges the synchronous Typer CLI with the async agent loop.
-Handles conversation context persistence and auto-compaction.
+Handles conversation context persistence, auto-compaction, and styled UI
+matching claude-code's terminal patterns.
 """
 
 from __future__ import annotations
 
 import json
+import time
 import uuid
 from pathlib import Path
 
-from rich.console import Console
-from rich.markdown import Markdown
-
+from octopus.cli_ui import (
+    ToolCallDisplay,
+    TurnStats,
+    console,
+    display_banner,
+    print_assistant_text_stream,
+    print_error,
+    print_help,
+    print_info,
+    print_prompt_arrow,
+    print_separator,
+    print_status,
+    print_status_line,
+    print_stream_newline,
+    print_success,
+    print_tool_call_output,
+    print_tool_call_result,
+    print_tool_call_start,
+    print_warning,
+)
 from octopus.core.kernel import Context, Kernel, PermissionMode
 from octopus.loop.compaction import CompactionEngine
 from octopus.loop.context import ConversationContext
@@ -25,8 +44,6 @@ from octopus.tools.filesystem import register_filesystem_tools
 from octopus.tools.git import register_git_tool
 from octopus.tools.search import register_search_tools
 from octopus.tools.shell import register_shell_tool
-
-console = Console()
 
 # Default model
 DEFAULT_MODEL = "claude-sonnet-4-20250514"
@@ -95,14 +112,13 @@ async def run_single_prompt_async(
     model: str | None = None,
     permission_mode: str = "default",
 ) -> None:
-    """Run a single prompt and print the response."""
+    """Run a single prompt and print the response (non-interactive mode)."""
     kernel, registry, provider, ctx = await _setup_runtime(
         model=model,
         permission_mode=permission_mode,
     )
 
     try:
-        # Create conversation context for this session
         conversation = ConversationContext(
             session_id=ctx.session_id,
             system_prompt=SYSTEM_PROMPT,
@@ -113,7 +129,11 @@ async def run_single_prompt_async(
 
         compaction = CompactionEngine()
 
-        collected: list[str] = []
+        # Track turn stats
+        turn_start = time.monotonic()
+        tool_call_count = 0
+        collected_text: list[str] = []
+
         async for event in run_query(
             conversation.messages,
             provider,
@@ -125,21 +145,42 @@ async def run_single_prompt_async(
             compaction=compaction,
         ):
             if event.type == StreamEventType.TEXT:
-                collected.append(event.text or "")
-                # Print tokens as they arrive (no newline)
-                console.print(event.text or "", end="", highlight=False)
+                collected_text.append(event.text or "")
+                print_assistant_text_stream(event.text or "")
             elif event.type == StreamEventType.TOOL_CALL:
-                # Show tool call indicator
                 tc = event.tool_call
                 if tc:
-                    console.print(f"\n[dim]>>> Tool: {tc.name}[/]", highlight=False)
+                    tool_call_count += 1
+                    print_tool_call_start(tc.name, tc.arguments)
+            elif event.type == StreamEventType.TOOL_RESULT:
+                tr = event.tool_result
+                if tr:
+                    is_error = tr.is_error if hasattr(tr, "is_error") else False
+                    result_text = tr.output if hasattr(tr, "output") else str(tr)
+                    # Create a temporary ToolCallDisplay for result display
+                    temp_tc = ToolCallDisplay(name="tool", arguments="")
+                    temp_tc.start_time = turn_start
+                    print_tool_call_result(temp_tc, result_text, is_error=is_error)
+                    if result_text and not is_error:
+                        print_tool_call_output(result_text)
+            elif event.type == StreamEventType.STATUS:
+                print_status(event.text or "")
             elif event.type == StreamEventType.ERROR:
-                console.print(f"\n[red]Error: {event.error}[/]")
+                print_error(event.error or "Unknown error")
             elif event.type == StreamEventType.DONE:
                 pass
 
-        if collected:
-            console.print()  # Final newline
+        if collected_text:
+            print_stream_newline()
+
+        # Print status line
+        duration_ms = int((time.monotonic() - turn_start) * 1000)
+        stats = TurnStats(
+            duration_ms=duration_ms,
+            model=model or DEFAULT_MODEL,
+            tool_calls=tool_call_count,
+        )
+        print_status_line(stats)
 
         # Persist conversation
         await conversation.save(kernel.state)
@@ -173,9 +214,9 @@ async def run_interactive_async(
             conversation = await ConversationContext.load(resume_session, kernel.state)
             if conversation:
                 conversation.sanitize()
-                console.print(f"[dim]Resumed session {resume_session[:8]} ({len(conversation.messages)} messages)[/]")
+                print_info(f"Resumed session {resume_session[:8]} ({len(conversation.messages)} messages)")
             else:
-                console.print(f"[yellow]Session {resume_session} not found, starting new.[/]")
+                print_warning(f"Session {resume_session} not found, starting new.")
 
         if conversation is None:
             conversation = ConversationContext(
@@ -184,14 +225,18 @@ async def run_interactive_async(
                 model=model or DEFAULT_MODEL,
             )
             conversation.ensure_system_message()
-            # Register the session in state
             await kernel.state.create_session(
                 ctx.session_id,
                 workspace=str(ctx.workspace) if ctx.workspace else None,
             )
 
-        # Codex-style separator
-        separator = "-" * console.width
+        # Display banner
+        display_banner(
+            model=model or DEFAULT_MODEL,
+            workspace=str(ctx.workspace),
+            session_id=ctx.session_id,
+            permission_mode=permission_mode,
+        )
 
         # prompt_toolkit session for styled input with proper cursor positioning
         from prompt_toolkit import PromptSession
@@ -201,8 +246,14 @@ async def run_interactive_async(
         prompt_style = Style.from_dict({"prompt": "bold #00afff"})
         pt_session: PromptSession[str] = PromptSession()
 
+        # Session cost tracking
+        session_cost = 0.0
+        session_tokens_in = 0
+        session_tokens_out = 0
+        session_tool_calls = 0
+
         while True:
-            console.print(separator, style="dim")
+            print_separator()
             try:
                 user_input = await pt_session.prompt_async(
                     HTML("<prompt>❯ </prompt>"),
@@ -211,24 +262,38 @@ async def run_interactive_async(
             except (EOFError, KeyboardInterrupt):
                 console.print("\n[dim]Goodbye![/]")
                 break
-            console.print(separator, style="dim")
+            print_separator()
 
             if not user_input.strip():
                 continue
 
+            # Handle slash commands
             if user_input.strip().startswith("/"):
-                if _handle_slash_command(user_input.strip(), conversation):
+                if _handle_slash_command(
+                    user_input.strip(),
+                    conversation,
+                    session_cost=session_cost,
+                    session_tokens_in=session_tokens_in,
+                    session_tokens_out=session_tokens_out,
+                ):
                     break
                 continue
 
+            # Add user message
+            conversation.add_message(Message(role=Role.USER, content=user_input))
             console.print()
 
-            conversation.add_message(Message(role=Role.USER, content=user_input))
+            # Print assistant response arrow
+            print_prompt_arrow()
 
-            # Show assistant response
-            console.print("[bold]❯[/] ", end="", highlight=False)
+            # Track turn stats
+            turn_start = time.monotonic()
+            turn_tool_calls = 0
+            collected_text: list[str] = []
 
-            collected: list[str] = []
+            # Track tool calls for display
+            current_tool = None
+
             async for event in run_query(
                 conversation.messages,
                 provider,
@@ -240,28 +305,55 @@ async def run_interactive_async(
                 compaction=compaction,
             ):
                 if event.type == StreamEventType.TEXT:
-                    collected.append(event.text or "")
-                    console.print(event.text or "", end="", highlight=False)
+                    collected_text.append(event.text or "")
+                    print_assistant_text_stream(event.text or "")
+
                 elif event.type == StreamEventType.TOOL_CALL:
                     tc = event.tool_call
                     if tc:
-                        args_preview = (
-                            tc.arguments[:80] + "..."
-                            if len(tc.arguments) > 80
-                            else tc.arguments
-                        )
-                        console.print(
-                            f"\n[dim]>>> {tc.name}({args_preview})[/]", highlight=False
-                        )
+                        turn_tool_calls += 1
+                        session_tool_calls += 1
+                        # Finish previous tool if still open
+                        if current_tool is not None:
+                            print_tool_call_result(current_tool, "")
+                        # Print new tool with newline prefix
+                        console.print()
+                        current_tool = print_tool_call_start(tc.name, tc.arguments)
+
+                elif event.type == StreamEventType.TOOL_RESULT:
+                    tr = event.tool_result
+                    if tr and current_tool is not None:
+                        is_error = getattr(tr, "is_error", False)
+                        result_text = getattr(tr, "output", str(tr))
+                        print_tool_call_result(current_tool, result_text, is_error=is_error)
+                        if result_text and not is_error:
+                            print_tool_call_output(result_text)
+                        current_tool = None
+
                 elif event.type == StreamEventType.STATUS:
-                    console.print(f"\n[dim]{event.text}[/]", highlight=False)
+                    print_status(event.text or "")
+
                 elif event.type == StreamEventType.ERROR:
-                    console.print(f"\n[red]Error: {event.error}[/]")
+                    print_error(event.error or "Unknown error")
+
                 elif event.type == StreamEventType.DONE:
                     pass
 
-            if collected:
-                console.print()  # Final newline
+            # Close any unclosed tool
+            if current_tool is not None:
+                print_tool_call_result(current_tool, "")
+
+            if collected_text:
+                print_stream_newline()
+
+            # Print turn status line
+            duration_ms = int((time.monotonic() - turn_start) * 1000)
+            stats = TurnStats(
+                duration_ms=duration_ms,
+                model=model or DEFAULT_MODEL,
+                tool_calls=turn_tool_calls,
+            )
+            print_status_line(stats)
             console.print()  # Blank line between turns
 
             # Persist conversation after each turn
@@ -271,37 +363,54 @@ async def run_interactive_async(
         await kernel.shutdown()
 
 
-def _handle_slash_command(command: str, conversation: ConversationContext) -> bool:
+def _handle_slash_command(
+    command: str,
+    conversation: ConversationContext,
+    *,
+    session_cost: float = 0.0,
+    session_tokens_in: int = 0,
+    session_tokens_out: int = 0,
+) -> bool:
     """Handle slash commands. Returns True if should exit."""
-    cmd = command.lower()
+    cmd = command.lower().split()[0]  # Get first word
+
     if cmd in ("/exit", "/quit", "/q"):
         console.print("[dim]Goodbye![/]")
         return True
+
     if cmd == "/clear":
         console.clear()
         return False
+
     if cmd == "/reset":
         conversation.clear()
         conversation.ensure_system_message()
-        console.print("[dim]Conversation reset.[/]")
+        print_info("Conversation reset.")
         return False
+
     if cmd == "/tokens":
         tokens = conversation.estimate_tokens()
-        console.print(f"[dim]Estimated tokens: {tokens:,}[/]")
+        console.print(f"[tokens]Estimated tokens: {tokens:,}[/]")
         return False
+
+    if cmd == "/cost":
+        console.print(f"[cost]Session cost: ${session_cost:.4f}[/]")
+        console.print(f"[tokens]Tokens: {session_tokens_in:,} in / {session_tokens_out:,} out[/]")
+        return False
+
+    if cmd == "/compact":
+        print_info("Compaction not yet implemented in this session.")
+        return False
+
+    if cmd == "/model":
+        console.print(f"[model]Current model: {conversation.model}[/]")
+        return False
+
     if cmd == "/help":
-        console.print(
-            Markdown(
-                "### Available Commands\n"
-                "- `/help` — Show this help\n"
-                "- `/clear` — Clear screen\n"
-                "- `/reset` — Reset conversation history\n"
-                "- `/tokens` — Show estimated token count\n"
-                "- `/exit` — Exit interactive mode\n"
-            )
-        )
+        print_help()
         return False
-    console.print(f"[red]Unknown command:[/] {command}")
+
+    print_error(f"Unknown command: {command}")
     return False
 
 
@@ -314,7 +423,7 @@ async def session_resume_async(
     """Resume a previous session by ID."""
     db_path = _get_db_path()
     if not db_path.exists():
-        console.print("[red]No database found. Run `octopus cli` first.[/]")
+        print_error("No database found. Run `octopus cli` first.")
         return
 
     await run_interactive_async(
@@ -345,7 +454,7 @@ async def show_audit_logs_async(
 
     db_path = _get_db_path()
     if not db_path.exists():
-        console.print("[yellow]No audit logs found.[/]")
+        print_warning("No audit logs found.")
         return
 
     audit = AuditLogger(db_path=db_path)
@@ -354,7 +463,7 @@ async def show_audit_logs_async(
         events = await audit.query(filters)
 
         if not events:
-            console.print("[yellow]No audit events found.[/]")
+            print_warning("No audit events found.")
             return
 
         from rich.table import Table
@@ -391,14 +500,14 @@ async def list_sessions_async() -> None:
 
     db_path = _get_db_path()
     if not db_path.exists():
-        console.print("[yellow]No sessions found.[/]")
+        print_warning("No sessions found.")
         return
 
     state = StateManager(db_path=db_path)
     try:
         sessions = await state.list_sessions()
         if not sessions:
-            console.print("[yellow]No sessions found.[/]")
+            print_warning("No sessions found.")
             return
 
         from rich.table import Table
@@ -411,11 +520,10 @@ async def list_sessions_async() -> None:
         table.add_column("Last Active")
 
         for s in sessions:
-            created = s.start_time.strftime("%Y-%m-%d %H:%M") if s.start_time else "—"
+            created = s.start_time.strftime("%Y-%m-%d %H:%M") if s.start_time else "---"
             last = (
-                s.last_activity.strftime("%Y-%m-%d %H:%M") if s.last_activity else "—"
+                s.last_activity.strftime("%Y-%m-%d %H:%M") if s.last_activity else "---"
             )
-            # Count messages from context
             msg_count = len(s.context.get("messages", []))
             table.add_row(
                 s.session_id[:8],
@@ -431,7 +539,7 @@ async def list_sessions_async() -> None:
 
 
 async def code_init_async(path: str) -> None:
-    """Initialize a workspace — create .octopus/ config directory."""
+    """Initialize a workspace -- create .octopus/ config directory."""
     ws = Path(path).resolve()
     octopus_dir = ws / ".octopus"
     octopus_dir.mkdir(parents=True, exist_ok=True)
@@ -449,11 +557,10 @@ async def code_init_async(path: str) -> None:
             f"  allowed_paths:\n"
             f"    - {ws}/**\n"
         )
-        console.print(f"[green]OK[/] Created {config_path}")
+        print_success(f"Created {config_path}")
     else:
-        console.print(f"[dim]Config already exists at {config_path}[/]")
+        print_info(f"Config already exists at {config_path}")
 
-    # Create audit db
     db_path = _get_db_path()
-    console.print(f"[green]OK[/] Workspace initialized at {ws}")
-    console.print(f"[dim]Database: {db_path}[/]")
+    print_success(f"Workspace initialized at {ws}")
+    print_info(f"Database: {db_path}")

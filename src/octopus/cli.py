@@ -23,32 +23,14 @@ def display_banner(
     permission_mode: str = "default",
 ) -> None:
     """Display the Octopus Agent info panel in Codex style."""
+    from octopus.cli_ui import display_banner as _display_banner
     from pathlib import Path
 
-    resolved_model = model or "claude-sonnet-4-20250514"
-    cwd = str(Path.cwd())
-    # Shorten home directory
-    home = str(Path.home())
-    if cwd.startswith(home):
-        cwd = "~" + cwd[len(home):]
-
-    console.print()
-    console.print(
-        Panel(
-            f"[bold cyan]>_[/] [bold]Octopus Agent[/] ([dim]v{__version__}[/])\n"
-            f"\n"
-            f"[bold]model:[/]     {resolved_model}   [dim]/model to change[/]\n"
-            f"[bold]permission:[/] {permission_mode}   [dim]/permission to change[/]\n"
-            f"[bold]directory:[/] {cwd}",
-            border_style="cyan",
-            padding=(0, 2),
-        )
+    _display_banner(
+        model=model or "claude-sonnet-4-20250514",
+        workspace=str(Path.cwd()),
+        permission_mode=permission_mode,
     )
-    console.print()
-    console.print("  [dim]Harness-governed AI assistant with full audit trail.[/]")
-    console.print()
-    console.print("[dim]" + "-" * 80 + "[/]")
-    console.print()
 
 
 def _run_async(coro: object) -> None:
