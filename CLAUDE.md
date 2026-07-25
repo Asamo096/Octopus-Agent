@@ -11,7 +11,7 @@ All AI outputs, file operations, shell execution, code writing behaviors are int
 
 ### Two Usage Modes (Shared Kernel)
 1. **Desktop GUI App** — Tauri + React, for daily users (analogous to Claude Desktop)
-2. **CLI Terminal Client** — Typer + Textual, for developers (analogous to Claude Code)
+2. **CLI Terminal Client** — Typer + Rich + prompt-toolkit, for developers (analogous to Claude Code)
 
 Both share identical core: harness kernel, configuration, conversation records, sandbox environment, agent policies.
 
@@ -23,13 +23,13 @@ Both share identical core: harness kernel, configuration, conversation records, 
 |-------|-----------|-----------|
 | **GUI Framework** | Tauri 2.x + React 18 + TypeScript | 25-50MB package, xterm.js terminal, modern UI, native sidecar for Python |
 | **CLI Framework** | Typer 0.12+ | Type-annotation-driven, auto-completion, Rich integration |
+| **CLI UI** | Rich + prompt-toolkit | Terminal rendering, styled prompts, arrow key selection menus |
 | **TUI Fallback** | Textual 0.80+ | Terminal UI for headless/SSH environments |
 | **Terminal Embedding** | xterm.js (in Tauri webview) | Industry standard (VS Code, Hyper), full VT100 support |
 | **LLM Provider Layer** | litellm + custom abstraction | 100+ providers unified, custom governance hooks on top |
 | **Data Models** | Pydantic v2 | Type-safe config, messages, tool inputs, JSON Schema generation |
 | **State/Config Sync** | SQLite (WAL mode) + localhost WebSocket | Persistent state + real-time GUI/CLI sync |
 | **HTTP Client** | httpx (async) | API calls, web tools, hooks |
-| **CLI UI** | Rich + prompt-toolkit | Terminal rendering, interactive prompts |
 | **Build/Packaging** | PyInstaller (Python backend) + Tauri bundler | Cross-platform standalone binaries |
 | **Testing** | pytest + pytest-asyncio + ruff + mypy | Async test support, linting, type checking |
 | **Python Version** | 3.11+ | Modern async features, match OpenHarness |
@@ -43,11 +43,9 @@ Both share identical core: harness kernel, configuration, conversation records, 
 │                    Entry: `octopus`                      │
 ├──────────────────────┬──────────────────────────────────┤
 │   CLI Layer (Typer)  │   GUI Layer (Tauri + React)      │
-│   octopus-cli        │   octopus-gui                    │
-│   - Textual TUI      │   - React frontend               │
-│   - Rich rendering    │   - xterm.js terminal            │
-│   - Interactive mode  │   - Code editor + diff preview   │
-│   - Code subcommands  │   - Harness control panel        │
+│   - Interactive mode │   - Chat panel                   │
+│   - Code commands    │   - Terminal (xterm.js)          │
+│   - Session mgmt     │   - Sidebar navigation          │
 ├──────────────────────┴──────────────────────────────────┤
 │              Shared Core: octopus-core                   │
 │  ┌─────────┐ ┌──────────┐ ┌───────────┐ ┌───────────┐  │
@@ -55,12 +53,15 @@ Both share identical core: harness kernel, configuration, conversation records, 
 │  │ Kernel  │ │  System  │ │  System   │ │ Providers │  │
 │  └─────────┘ └──────────┘ └───────────┘ └───────────┘  │
 │  ┌─────────┐ ┌──────────┐ ┌───────────┐ ┌───────────┐  │
-│  │Permission│ │  Audit   │ │  Plugin   │ │  Config   │  │
-│  │ Engine  │ │  Logger  │ │  System   │ │  Manager  │  │
+│  │Permission│ │  Audit   │ │  Memory   │ │  Sandbox  │  │
+│  │ Engine  │ │  Logger  │ │  System   │ │  (Cube)   │  │
+│  └─────────┘ └──────────┘ └───────────┘ └───────────┘  │
+│  ┌─────────┐ ┌──────────┐ ┌───────────┐ ┌───────────┐  │
+│  │  Hook   │ │ Rollback │ │   Auth    │ │  Plugin   │  │
+│  │ Manager │ │  Engine  │ │  Store    │ │  System   │  │
 │  └─────────┘ └──────────┘ └───────────┘ └───────────┘  │
 ├─────────────────────────────────────────────────────────┤
-│              IPC Layer: octopus-bridge                   │
-│  SQLite (persistent) + WebSocket (real-time sync)        │
+│  SQLite (persistent state + audit) + WebSocket (IPC)     │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -96,27 +97,29 @@ Octopus-Agent/
 │       ├── __init__.py
 │       ├── __main__.py         # `python -m octopus`
 │       ├── cli.py              # Typer CLI entry point
+│       ├── cli_runtime.py      # Async CLI runtime helpers
+│       ├── cli_ui.py           # CLI UI rendering (banner, menus, tool output)
 │       ├── core/               # === HARNESS KERNEL ===
 │       │   ├── __init__.py
 │       │   ├── kernel.py       # Kernel: central orchestrator
-│       │   ├── permissions.py  # Permission engine (path rules, command rules)
+│       │   ├── permissions.py  # Permission engine (4 modes)
 │       │   ├── audit.py        # Audit logger (all actions tracked)
 │       │   ├── sandbox.py      # Filesystem sandbox isolation
-│       │   ├── hooks.py        # PreToolUse/PostToolUse lifecycle
+│       │   ├── hooks.py        # 4 hook types with hot-reload
 │       │   ├── rollback.py     # Task rollback via state checkpoints
 │       │   └── state.py        # Global state manager
 │       ├── agents/             # === AGENT SYSTEM ===
 │       │   ├── __init__.py
-│       │   ├── base.py         # BaseAgent protocol
+│       │   ├── base.py         # BaseAgent protocol + AgentDefinition
 │       │   ├── llm_agent.py    # LLM-backed agent
-│       │   ├── coordinator.py  # Multi-agent coordinator
+│       │   ├── coordinator.py  # Multi-agent coordinator + WorkerAgent
 │       │   └── registry.py     # Agent discovery & registration
 │       ├── loop/               # === AGENT LOOP ===
 │       │   ├── __init__.py
 │       │   ├── engine.py       # Query loop (think-act-observe)
 │       │   ├── context.py      # Conversation context management
-│       │   ├── scheduler.py    # Priority task scheduler
-│       │   └── compaction.py   # Auto-compact when context too long
+│       │   ├── compaction.py   # Hybrid compaction strategies
+│       │   └── models.py       # Message, StreamEvent, Role
 │       ├── tools/              # === TOOL SYSTEM ===
 │       │   ├── __init__.py
 │       │   ├── base.py         # Tool protocol & registry
@@ -129,10 +132,13 @@ Octopus-Agent/
 │       ├── providers/          # === LLM PROVIDERS ===
 │       │   ├── __init__.py
 │       │   ├── base.py         # Provider protocol
-│       │   ├── litellm_adapter.py  # litellm unified adapter
-│       │   ├── anthropic.py    # Claude-specific features
-│       │   ├── openai.py       # OpenAI-compatible
-│       │   └── local.py        # Ollama / local models
+│       │   └── litellm_adapter.py  # litellm unified adapter
+│       ├── skills/             # === SKILLS SYSTEM ===
+│       │   ├── __init__.py
+│       │   ├── schema.py       # SkillDefinition with YAML frontmatter
+│       │   ├── loader.py       # Skill discovery & loading
+│       │   ├── registry.py     # Skill registry
+│       │   └── bundled/        # Built-in skills (review, explain)
 │       ├── plugins/            # === PLUGIN SYSTEM ===
 │       │   ├── __init__.py
 │       │   ├── loader.py       # Plugin discovery & loading
@@ -140,17 +146,29 @@ Octopus-Agent/
 │       │   └── schemas.py      # Plugin manifest schema
 │       ├── config/             # === CONFIGURATION ===
 │       │   ├── __init__.py
+│       │   ├── manager.py      # Config manager (auth.json + config.toml)
 │       │   ├── schema.py       # Pydantic settings models
-│       │   ├── loader.py       # Multi-layer config resolution
-│       │   └── sync.py         # SQLite + WebSocket state sync
+│       │   └── loader.py       # Multi-layer config resolution
+│       ├── memory/             # === MEMORY SYSTEM ===
+│       │   ├── __init__.py
+│       │   ├── schema.py       # MemoryEntry model
+│       │   └── manager.py      # CRUD + search + relevance
+│       ├── auth/               # === CREDENTIAL STORAGE ===
+│       │   ├── __init__.py
+│       │   └── credentials.py  # Fernet-encrypted store
+│       ├── sandbox/            # === SANDBOX BACKENDS ===
+│       │   ├── __init__.py
+│       │   ├── adapter.py      # SandboxAdapter protocol
+│       │   ├── local.py        # Subprocess (no isolation)
+│       │   └── cube.py         # CubeSandbox (KVM MicroVM)
 │       ├── bridge/             # === GUI-CLI BRIDGE ===
 │       │   ├── __init__.py
 │       │   ├── server.py       # WebSocket server for GUI IPC
-│       │   ├── client.py       # WebSocket client for CLI
 │       │   └── protocol.py     # Message types for IPC
 │       └── utils/
 │           ├── __init__.py
 │           ├── files.py        # Atomic file operations
+│           ├── file_cache.py   # LRU file state cache
 │           ├── logging.py      # Structured logging
 │           └── platform.py     # OS detection, path helpers
 ├── tests/
@@ -162,19 +180,14 @@ Octopus-Agent/
 │   ├── plans/                  # Implementation phase plans
 │   │   ├── phase1-mvp-core.md
 │   │   ├── phase2-enhanced.md
-│   │   └── phase3-full.md
+│   │   ├── phase3-full.md
+│   │   ├── phase4-gap-analysis.md
+│   │   └── phase5-claude-code-reuse.md
 │   ├── architecture.md         # System architecture
-│   ├── api/                    # Auto-generated API docs
-│   ├── user-guide.md           # User documentation
 │   └── developer.md            # Contributing guide
-├── scripts/
-│   ├── build.py                # Build automation
-│   ├── package.py              # Cross-platform packaging
-│   └── release.py              # Release automation
-├── vendor/
-│   └── openharness/            # Vendored OpenHarness modules (with attribution)
 ├── CLAUDE.md                   # This file
-├── README.md
+├── README.md                   # English documentation
+├── README-zh_CN.md             # Chinese documentation
 └── LICENSE
 ```
 
@@ -182,11 +195,22 @@ Octopus-Agent/
 
 ## Harness Governance: Core Feature Specification
 
+### Permission Modes
+| Mode | Shell | Write/Read/Delete | Use Case |
+|------|-------|-------------------|----------|
+| **manual** (default) | Ask approval | Ask approval | Untrusted code, review everything |
+| **accept_edits** | Block | Allow | Code review, allow edits but no execution |
+| **plan** | Block | Allow | Planning, allow file ops but no execution |
+| **auto** | Allow | Allow | Trusted environment, full automation |
+
+Switch modes with `Shift+Tab` during interactive sessions.
+
 ### File System Sandbox
 - AI can only operate within user-authorized folders
 - Cross-directory access blocked by default
 - Sensitive paths (SSH keys, AWS creds, .env) always blocked regardless of rules
 - Configurable allow/deny glob patterns
+- CubeSandbox MicroVM isolation for hardware-level security
 
 ### Shell Command Governance
 - Safe commands (ls, cat, grep, git) allowed by default
@@ -208,14 +232,53 @@ Octopus-Agent/
 
 ---
 
+## Configuration System
+
+### Files (in `~/.octopus/`)
+
+**auth.json** — API keys (sensitive, gitignored):
+```json
+{
+  "OPENAI_API_KEY": "sk-...",
+  "ANTHROPIC_API_KEY": "sk-ant-..."
+}
+```
+
+**config.toml** — Provider settings:
+```toml
+model_provider = "openai"
+model = "gpt-4o"
+model_reasoning_effort = "high"
+
+[model_providers.openai]
+name = "OpenAI"
+base_url = "https://api.openai.com/v1"
+wire_api = "chat_completions"
+requires_openai_auth = true
+```
+
+### In-Session Commands
+| Command | Description |
+|---------|-------------|
+| `/model` | Fetch & select model with arrow keys |
+| `/config show` | Show current configuration |
+| `/config set model <m>` | Set model name |
+| `/config set provider <p>` | Set provider name |
+| `/config set base_url <u>` | Set provider base URL |
+| `/config set api_key <key>` | Set API key |
+
+---
+
 ## CLI Command Reference
 
 ```bash
-# Launch GUI (default)
-octopus
-
 # CLI interactive mode
 octopus cli
+octopus cli -c <session-id>           # Resume a session
+octopus cli --model gpt-4o            # Use specific model
+octopus cli --permission-mode auto    # Set permission mode
+
+# Single prompt
 octopus cli "Write a Python sorting algorithm"
 
 # Code agent subcommands
@@ -225,20 +288,24 @@ octopus code test          # Generate & run unit tests
 octopus code refactor      # Refactor codebase
 octopus code logs          # View audit records
 
-# Harness governance
-octopus config show        # Show current config
-octopus config set <key> <value>  # Update config
-octopus permissions list   # Show permission rules
-octopus permissions add <pattern>  # Add rule
-
-# Provider management
-octopus provider list      # List configured providers
-octopus provider use <name> # Switch default provider
-
 # Session management
 octopus session list       # List past sessions
 octopus session resume <id> # Resume a session
+octopus session new        # Start a new session
 ```
+
+---
+
+## Response Handling
+
+The agent loop processes model output through multiple stages:
+
+1. **XML tool call parsing** — Handles `<tool_call>` and `<function=name>` formats
+2. **Code block detection** — Parses ` ```bash ` blocks as shell commands
+3. **Bare command detection** — Recognizes plain shell commands
+4. **Artifact stripping** — Removes `<thinking>`, `<tool_result>`, `<|python_tag|>`
+5. **Tool name normalization** — Maps variations (terminal, execute_command) to canonical names
+6. **Deduplication** — Prevents duplicate tool execution
 
 ---
 
@@ -266,18 +333,26 @@ octopus session resume <id> # Resume a session
 
 ---
 
-## Reference: OpenHarness
+## Reference Projects
 
-OpenHarness (HKUDS) is the reference implementation. Key modules vendored:
-- `engine/query.py` → `octopus/loop/engine.py`
-- `api/` → `octopus/providers/`
-- `permissions/` → `octopus/core/permissions.py`
-- `hooks/` → `octopus/core/hooks.py`
-- `tools/` → `octopus/tools/`
-- `config/settings.py` → `octopus/config/schema.py`
-- `plugins/` → `octopus/plugins/`
+### OpenHarness (HKUDS)
+Reference implementation for harness governance. Key modules adapted:
+- `engine/query.py` -> `octopus/loop/engine.py`
+- `api/` -> `octopus/providers/`
+- `permissions/` -> `octopus/core/permissions.py`
+- `hooks/` -> `octopus/core/hooks.py`
+- `tools/` -> `octopus/tools/`
+- `config/settings.py` -> `octopus/config/schema.py`
+- `plugins/` -> `octopus/plugins/`
 
-**Attribution**: OpenHarness credited in LICENSE and docs. Vendored modules retain original copyright headers.
+### claude-code (Anthropic)
+Production CLI agent. Patterns adopted:
+- Skills system (SKILL.md with YAML frontmatter)
+- File state cache (LRU, mtime-based invalidation)
+- Budget enforcement (turns, tool calls, tokens)
+- Worker agents (background execution)
+- Response handling (XML parsing, artifact stripping)
+- Retry with exponential backoff
 
 ---
 
@@ -287,3 +362,5 @@ Detailed phase plans are in `docs/plans/`:
 - [Phase 1: MVP Core](docs/plans/phase1-mvp-core.md) — Weeks 1-4: Harness kernel + CLI
 - [Phase 2: Enhanced](docs/plans/phase2-enhanced.md) — Weeks 5-8: Multi-provider + GUI foundation
 - [Phase 3: Full](docs/plans/phase3-full.md) — Weeks 9-14: Full GUI, plugins, packaging
+- [Phase 4: Gap Analysis](docs/plans/phase4-gap-analysis.md) — Weeks 15-20: OpenHarness parity
+- [Phase 5: claude-code Patterns](docs/plans/phase5-claude-code-reuse.md) — Weeks 21-26: Skills, cache, budget, workers
