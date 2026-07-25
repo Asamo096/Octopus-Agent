@@ -251,8 +251,13 @@ async def run_query(
                             )]
                             collected_text.clear()
 
-            # Deduplicate tool calls - only execute unique commands
+            # Normalize tool names and deduplicate
             if collected_tool_calls:
+                # Apply tool name mapping first
+                for tc in collected_tool_calls:
+                    tc.name = _TOOL_NAME_MAP.get(tc.name, tc.name)
+
+                # Deduplicate by (normalized_name, arguments)
                 seen = set()
                 unique_calls = []
                 for tc in collected_tool_calls:
