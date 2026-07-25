@@ -611,60 +611,59 @@ async def _handle_slash_command(
 async def _handle_model_command(conversation: ConversationContext) -> None:
     """Handle /model — fetch models from provider and list for selection.
 
-    GET /v1/models from the configured provider base_url.
+    For providers with base_url: GET /v1/models
+    For litellm-native providers: use known model list
     """
     import httpx
 
     config = load_config()
     provider = config.provider_config
+    model_provider = config.model_provider
 
-    if not provider or not provider.base_url:
-        print_warning("No provider configured. Set base_url first:")
-        print_info("  /config set provider <name>")
-        print_info("  /config set base_url <url>")
-        print_info("  /config set api_key <key>")
-        return
-
-    # Build models endpoint URL
-    base_url = provider.base_url.rstrip("/")
-    models_url = f"{base_url}/models"
-
-    # Prepare auth headers
-    auth = load_auth()
-    headers: dict[str, str] = {"Content-Type": "application/json"}
-    if auth.openai_api_key:
-        headers["Authorization"] = f"Bearer {auth.openai_api_key}"
-
-    # Fetch models
-    print_info(f"Fetching models from {models_url} ...")
-    try:
-        with httpx.Client(timeout=15) as client:
-            resp = client.get(models_url, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-    except httpx.HTTPStatusError as e:
-        print_error(f"HTTP {e.response.status_code}: {e.response.text[:200]}")
-        return
-    except Exception as e:
-        print_error(f"Failed to fetch models: {e}")
-        return
-
-    # Parse model list — handle both {"data": [...]} and plain [...]
     models: list[dict[str, str]] = []
-    if isinstance(data, dict) and "data" in data:
-        raw_list = data["data"]
-    elif isinstance(data, list):
-        raw_list = data
-    else:
-        print_error("Unexpected response format")
-        return
 
-    for item in raw_list:
-        if isinstance(item, dict) and "id" in item:
-            models.append({"id": item["id"], "owned_by": item.get("owned_by", "")})
+    # Try fetching from provider API if base_url is set
+    if provider and provider.base_url:
+        base_url = provider.base_url.rstrip("/")
+        models_url = f"{base_url}/models"
+
+        auth = load_auth()
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if auth.openai_api_key:
+            headers["Authorization"] = f"Bearer {auth.openai_api_key}"
+
+        print_info(f"Fetching models from {models_url} ...")
+        try:
+            with httpx.Client(timeout=15) as client:
+                resp = client.get(models_url, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
+
+            # Parse model list
+            raw_list = data.get("data", data) if isinstance(data, dict) else data
+            if isinstance(raw_list, list):
+                for item in raw_list:
+                    if isinstance(item, dict) and "id" in item:
+                        models.append({"id": item["id"], "owned_by": item.get("owned_by", "")})
+        except Exception as e:
+            print_warning(f"Could not fetch models: {e}")
+
+    # Fallback: use known models for litellm-native providers
+    if not models and model_provider:
+        known_models = _get_known_models(model_provider)
+        if known_models:
+            models = [{"id": m, "owned_by": model_provider} for m in known_models]
+        else:
+            # Let user type model name manually
+            print_info(f"No model list available for provider '{model_provider}'.")
+            print_info("You can set a model directly with: /config set model <model-name>")
+            return
 
     if not models:
-        print_warning("No models found.")
+        print_warning("No models found. Configure provider first:")
+        print_info("  /config set provider <name>")
+        print_info("  /config set base_url <url>  (optional for litellm-native providers)")
+        print_info("  /config set api_key <key>")
         return
 
     # Sort by id
@@ -684,19 +683,39 @@ async def _handle_model_command(conversation: ConversationContext) -> None:
 
     selected_model = select_option(
         model_ids,
-        title=f"Available Models ({provider.name or config.model_provider})",
+        title=f"Available Models ({model_provider or 'unknown'})",
         initial_index=initial_index,
     )
 
     if not selected_model:
         return
 
-    # Resolve selection
     # Save to config
     config.model = selected_model
     save_config(config)
     conversation.model = selected_model
-    print_success(f"Model set to: {selected_model}")
+    print_success(f'Model set to: {selected_model}')
+
+
+def _get_known_models(provider: str) -> list[str]:
+    """Get known models for litellm-native providers."""
+    known: dict[str, list[str]] = {
+        "xiaomi_mimo": [
+            "mimo-v2.5", "mimo-v2.5-asr", "mimo-v2.5-pro",
+            "mimo-v2.5-tts", "mimo-v2.5-tts-voiceclone", "mimo-v2.5-tts-voicedesign",
+        ],
+        "openai": [
+            "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o1", "o1-mini", "o3-mini",
+        ],
+        "anthropic": [
+            "claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-4-5-20251001",
+        ],
+        "deepseek": [
+            "deepseek-chat", "deepseek-reasoner",
+        ],
+    }
+    return known.get(provider, [])
+
 
 
 def _handle_config_command(command: str) -> None:
