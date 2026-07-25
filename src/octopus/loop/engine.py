@@ -122,6 +122,17 @@ async def run_query(
                     cleaned = re.sub(r"<tool_call>.*?</tool_call>", "", full_text, flags=re.DOTALL).strip()
                     collected_text.clear()
                     collected_text.append(cleaned)
+                else:
+                    # Try parsing bash code blocks as shell tool calls
+                    code_calls = _parse_code_block_calls(full_text)
+                    if code_calls:
+                        collected_tool_calls = code_calls
+                        # Remove code blocks from displayed text
+                        import re
+                        cleaned = re.sub(r"```(?:bash|sh|shell)?\n.*?```", "", full_text, flags=re.DOTALL).strip()
+                        collected_text.clear()
+                        if cleaned:
+                            collected_text.append(cleaned)
         except Exception as exc:
             error_msg = str(exc)
             # Reactive compaction on "prompt too long" errors
@@ -290,6 +301,45 @@ def _parse_xml_tool_calls(text: str) -> list[ToolCallDelta]:
             id=f"xml_call_{i}",
             name=tool_name,
             arguments=args_str,
+        ))
+
+    return calls
+
+
+def _parse_code_block_calls(text: str) -> list[ToolCallDelta]:
+    """Parse bash/shell code blocks as shell tool calls.
+
+    Handles format:
+        ```bash
+        touch test.txt
+        ```
+        ```sh
+        ls -la
+        ```
+        ```
+        echo hello
+        ```
+    """
+    import re
+
+    # Match code blocks with bash/sh/shell language tags or no tag
+    pattern = r"```(?:bash|sh|shell|zsh)?\n(.*?)```"
+    matches = re.findall(pattern, text, re.DOTALL)
+
+    calls: list[ToolCallDelta] = []
+    for i, block in enumerate(matches):
+        command = block.strip()
+        if not command:
+            continue
+
+        # Skip if it looks like Python, JS, etc. (not a shell command)
+        if any(command.startswith(lang) for lang in ["python", "py", "import ", "from ", "def ", "class "]):
+            continue
+
+        calls.append(ToolCallDelta(
+            id=f"code_block_{i}",
+            name="shell",
+            arguments=json.dumps({"command": command}),
         ))
 
     return calls
