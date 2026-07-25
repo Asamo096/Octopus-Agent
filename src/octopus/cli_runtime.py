@@ -190,9 +190,13 @@ async def run_interactive_async(
                 workspace=str(ctx.workspace) if ctx.workspace else None,
             )
 
+        # Codex-style separator
+        separator = "[dim]" + "-" * 80 + "[/]"
+
         while True:
+            console.print(separator)
             try:
-                user_input = console.input("[bold blue]You>[/] ")
+                user_input = console.input("[bold cyan]>[/] [/]")
             except (EOFError, KeyboardInterrupt):
                 console.print("\n[dim]Goodbye![/]")
                 break
@@ -205,10 +209,13 @@ async def run_interactive_async(
                     break
                 continue
 
+            console.print(separator)
+            console.print()
+
             conversation.add_message(Message(role=Role.USER, content=user_input))
 
             # Show assistant response
-            console.print("[bold green]Octopus>[/] ", end="", highlight=False)
+            console.print("[bold]>[/] ", end="", highlight=False)
 
             collected: list[str] = []
             async for event in run_query(

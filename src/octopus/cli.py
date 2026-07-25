@@ -18,19 +18,36 @@ app = typer.Typer(
 console = Console()
 
 
-def display_banner() -> None:
-    """Display the Octopus Agent ASCII banner."""
-    banner = (
-        "[bold cyan]"
-        " ██████   ██████ ████████  ██████  ██████  ██    ██ ███████ \n"
-        "██    ██ ██         ██    ██    ██ ██   ██ ██    ██ ██      \n"
-        "██    ██ ██         ██    ██    ██ ██████  ██    ██ ███████ \n"
-        "██    ██ ██         ██    ██    ██ ██      ██    ██      ██ \n"
-        " ██████   ██████    ██     ██████  ██       ██████  ███████ \n"
-        "[/]"
+def display_banner(
+    model: str | None = None,
+    permission_mode: str = "default",
+) -> None:
+    """Display the Octopus Agent info panel in Codex style."""
+    from pathlib import Path
+
+    resolved_model = model or "claude-sonnet-4-20250514"
+    cwd = str(Path.cwd())
+    # Shorten home directory
+    home = str(Path.home())
+    if cwd.startswith(home):
+        cwd = "~" + cwd[len(home):]
+
+    console.print()
+    console.print(
+        Panel(
+            f"[bold cyan]>_[/] [bold]Octopus Agent[/] ([dim]v{__version__}[/])\n"
+            f"\n"
+            f"[bold]model:[/]     {resolved_model}   [dim]/model to change[/]\n"
+            f"[bold]permission:[/] {permission_mode}   [dim]/permission to change[/]\n"
+            f"[bold]directory:[/] {cwd}",
+            border_style="cyan",
+            padding=(0, 2),
+        )
     )
-    console.print(banner)
-    console.print(f"  [dim]v{__version__} — Harness-governed AI assistant[/]")
+    console.print()
+    console.print("  [dim]Harness-governed AI assistant with full audit trail.[/]")
+    console.print()
+    console.print("[dim]" + "-" * 80 + "[/]")
     console.print()
 
 
@@ -80,26 +97,16 @@ def cli(
     from octopus.cli_runtime import run_interactive_async, run_single_prompt_async
 
     if prompt:
-        display_banner()
-        console.print(
-            Panel(f"[bold]Prompt:[/] {prompt}", title="Octopus", border_style="blue")
-        )
+        display_banner(model=model, permission_mode=permission_mode)
+        console.print(f"[bold]>[/] {prompt}")
+        console.print()
         _run_async(
             run_single_prompt_async(
                 prompt, model=model, permission_mode=permission_mode
             )
         )
     else:
-        display_banner()
-        console.print(
-            Panel(
-                "[bold green]Interactive Mode[/]\n"
-                "Type your message and press Enter.\n"
-                "Commands: [cyan]/help[/] [cyan]/clear[/] [cyan]/reset[/] [cyan]/tokens[/] [cyan]/exit[/]",
-                title="Octopus",
-                border_style="blue",
-            )
-        )
+        display_banner(model=model, permission_mode=permission_mode)
         _run_async(run_interactive_async(model=model, permission_mode=permission_mode))
 
 
