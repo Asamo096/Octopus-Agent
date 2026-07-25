@@ -54,17 +54,19 @@ def display_banner(
     session_id: str | None = None,
     permission_mode: str = "default",
 ) -> None:
-    """Display the Octopus startup banner in Codex style.
+    """Display the Octopus startup banner with ASCII art logo."""
+    logo = [
+        " ██████╗  ██████╗████████╗ ██████╗ ██████╗ ██╗   ██╗███████╗",
+        "██╔═══██╗██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗██║   ██║██╔════╝",
+        "██║   ██║██║        ██║   ██║   ██║██████╔╝██║   ██║███████╗",
+        "██║   ██║██║        ██║   ██║   ██║██╔═══╝ ██║   ██║╚════██║",
+        "╚██████╔╝╚██████╗   ██║   ╚██████╔╝██║     ╚██████╔╝███████║",
+        " ╚═════╝  ╚═════╝   ╚═╝    ╚═════╝ ╚═╝      ╚═════╝ ╚══════╝",
+    ]
 
-    Layout:
-        Octopus Agent v0.1.0
-        model: claude-sonnet-4 | auth: api-key | permission: default
-        cwd: /path/to/workspace
-        session: abc12345
-    """
-    # Version line
     console.print()
-    console.print("[accent]Octopus Agent[/] [dim]v0.1.0[/]")
+    for line in logo:
+        console.print(f"[accent]{line}[/]")
 
     # Info line — model | auth | permission
     model_short = _shorten_model(model)
