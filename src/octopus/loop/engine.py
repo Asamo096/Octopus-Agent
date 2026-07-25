@@ -117,17 +117,15 @@ async def run_query(
                 xml_calls = _parse_xml_tool_calls(full_text)
                 if xml_calls:
                     collected_tool_calls = xml_calls
-                    # Remove XML from displayed text
-                    import re
-                    cleaned = re.sub(r"<tool_call>.*?</tool_call>", "", full_text, flags=re.DOTALL).strip()
+                    cleaned = _strip_xml_tool_calls(full_text)
                     collected_text.clear()
-                    collected_text.append(cleaned)
+                    if cleaned:
+                        collected_text.append(cleaned)
                 else:
                     # Try parsing bash code blocks as shell tool calls
                     code_calls = _parse_code_block_calls(full_text)
                     if code_calls:
                         collected_tool_calls = code_calls
-                        # Remove code blocks from displayed text
                         import re
                         cleaned = re.sub(r"```(?:bash|sh|shell)?\n.*?```", "", full_text, flags=re.DOTALL).strip()
                         collected_text.clear()
@@ -263,6 +261,59 @@ async def _execute_tool(
 
     # Execute through the kernel's harness pipeline
     return await kernel.execute_tool(tool_call, ctx)
+
+
+def _parse_xml_tool_calls(text: str) -> list[ToolCallDelta]:
+    """Parse XML-formatted tool calls from model output."""
+    import re
+
+    calls: list[ToolCallDelta] = []
+    call_id = 0
+
+    # Format 1: <tool_call>...</tool_call>
+    pattern1 = r"<tool_call>(.*?)</tool_call>"
+    for block in re.findall(pattern1, text, re.DOTALL):
+        name_match = re.search(r"<tool_name>\s*(.*?)\s*</tool_name>", block, re.DOTALL)
+        if not name_match:
+            continue
+        tool_name = name_match.group(1).strip()
+        args_match = re.search(r"<arguments>\s*(.*?)\s*</arguments>", block, re.DOTALL)
+        args_str = args_match.group(1).strip() if args_match else "{}"
+        try:
+            json.loads(args_str)
+        except json.JSONDecodeError:
+            args_str = "{}"
+        calls.append(ToolCallDelta(id=f"xml_call_{call_id}", name=tool_name, arguments=args_str))
+        call_id += 1
+
+    # Format 2: <function=name>...</function>
+    pattern2 = r"<function=(.*?)>(.*?)</function>"
+    for block in re.findall(pattern2, text, re.DOTALL):
+        func_match = re.search(r"<function=(.*?)>", block, re.DOTALL)
+        if not func_match:
+            continue
+        tool_name = func_match.group(1).strip()
+        params: dict[str, str] = {}
+        for pm in re.finditer(r"<parameter=(\w+)>(.*?)</parameter>", block, re.DOTALL):
+            params[pm.group(1)] = pm.group(2).strip()
+        if "command" in params:
+            args_str = json.dumps({"command": params["command"]})
+        elif "cmd" in params:
+            args_str = json.dumps({"command": params["cmd"]})
+        else:
+            args_str = json.dumps(params)
+        calls.append(ToolCallDelta(id=f"xml_call_{call_id}", name=tool_name, arguments=args_str))
+        call_id += 1
+
+    return calls
+
+
+def _strip_xml_tool_calls(text: str) -> str:
+    """Remove all XML tool call formats from text."""
+    import re
+    text = re.sub(r"<tool_call>.*?</tool_call>", "", text, flags=re.DOTALL)
+    text = re.sub(r"<function=.*?>.*?</function>", "", text, flags=re.DOTALL)
+    return text.strip()
 
 
 def _parse_code_block_calls(text: str) -> list[ToolCallDelta]:
