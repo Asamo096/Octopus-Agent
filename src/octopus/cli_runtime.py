@@ -616,13 +616,6 @@ async def _handle_slash_command(
         console.print(f"[tokens]Estimated tokens: {tokens:,}[/]")
         return False
 
-    if cmd == "/cost":
-        console.print(f"[cost]Session cost: ${session_cost:.4f}[/]")
-        console.print(
-            f"[tokens]Tokens: {session_tokens_in:,} in / {session_tokens_out:,} out[/]"
-        )
-        return False
-
     if cmd == "/compact":
         print_info("Compaction not yet implemented in this session.")
         return False

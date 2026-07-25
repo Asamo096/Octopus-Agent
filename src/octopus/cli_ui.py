@@ -229,7 +229,6 @@ SLASH_COMMANDS: list[dict[str, str]] = [
     {"name": "/config set base_url", "description": "Set provider base URL"},
     {"name": "/config set api_key", "description": "Set API key"},
     {"name": "/tokens", "description": "Show estimated token count"},
-    {"name": "/cost", "description": "Show session cost"},
     {"name": "/compact", "description": "Force conversation compaction"},
     {"name": "/reset", "description": "Reset conversation history"},
     {"name": "/clear", "description": "Clear screen"},
@@ -684,7 +683,6 @@ def print_help() -> None:
 | `/clear` | Clear screen |
 | `/reset` | Reset conversation |
 | `/tokens` | Show token estimate |
-| `/cost` | Show session cost |
 | `/compact` | Force compaction |
 | `/model` | Fetch & select model from provider |
 | `/config` | Show/edit configuration |
