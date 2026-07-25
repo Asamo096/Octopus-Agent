@@ -126,7 +126,7 @@ async def run_query(
                 import re
                 full_text = "".join(collected_text)
                 # Strip thinking blocks
-                full_text = re.sub(r"<thinking>.*?</thinking>", "", full_text, flags=re.DOTALL).strip()
+                full_text = _strip_model_artifacts(full_text)
                 xml_calls = _parse_xml_tool_calls(full_text)
                 if xml_calls:
                     collected_tool_calls = xml_calls
@@ -158,6 +158,17 @@ async def run_query(
                                 arguments=json.dumps({"command": stripped}),
                             )]
                             collected_text.clear()
+
+            # Deduplicate tool calls - only execute unique commands
+            if collected_tool_calls:
+                seen = set()
+                unique_calls = []
+                for tc in collected_tool_calls:
+                    key = (tc.name, tc.arguments)
+                    if key not in seen:
+                        seen.add(key)
+                        unique_calls.append(tc)
+                collected_tool_calls = unique_calls
         except Exception as exc:
             error_msg = str(exc)
             # Reactive compaction on "prompt too long" errors
@@ -289,6 +300,23 @@ async def _execute_tool(
     # Execute through the kernel's harness pipeline
     return await kernel.execute_tool(tool_call, ctx)
 
+
+
+
+def _strip_model_artifacts(text: str) -> str:
+    """Strip model-specific artifacts from output text."""
+    import re
+    # Strip thinking blocks
+    text = re.sub(r"<thinking>.*?</thinking>", "", text, flags=re.DOTALL)
+    # Strip <|python_tag|> and similar markers
+    text = re.sub(r"<\|.*?\|>", "", text)
+    # Strip <think>...</think> blocks
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    # Strip stray code block markers
+    text = re.sub(r"```(?:\w+)?", "", text)
+    # Clean up extra whitespace
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def _is_shell_command(text: str) -> bool:
