@@ -262,7 +262,7 @@ async def run_interactive_async(
                 )
             except (EOFError, KeyboardInterrupt):
                 console.print("\n[dim]Goodbye![/]")
-                console.print(f"[dim]octopus -c {display_session_id}[/]")
+                console.print(f"[dim]octopus cli -c {display_session_id}[/]")
                 break
             print_separator()
 
