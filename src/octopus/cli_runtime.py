@@ -17,7 +17,10 @@ from octopus.loop.engine import run_query
 from octopus.loop.models import Message, Role, StreamEventType
 from octopus.providers.litellm_adapter import LiteLLMProvider
 from octopus.tools.base import ToolRegistry
+from octopus.tools.diff import register_diff_tools
 from octopus.tools.filesystem import register_filesystem_tools
+from octopus.tools.git import register_git_tool
+from octopus.tools.search import register_search_tools
 from octopus.tools.shell import register_shell_tool
 
 console = Console()
@@ -67,6 +70,9 @@ async def _setup_runtime(
     registry = ToolRegistry()
     register_filesystem_tools(registry, kernel)
     register_shell_tool(registry, kernel)
+    register_git_tool(registry, kernel)
+    register_diff_tools(registry, kernel)
+    register_search_tools(registry, kernel)
 
     provider = LiteLLMProvider()
 
