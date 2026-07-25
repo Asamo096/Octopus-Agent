@@ -173,3 +173,6 @@ cython_debug/
 audit.log
 config.yaml
 config.json
+node_modules/
+frontend/dist/
+frontend/.vite/
