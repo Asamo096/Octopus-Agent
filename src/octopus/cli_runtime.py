@@ -692,22 +692,6 @@ async def _handle_model_command(conversation: ConversationContext) -> None:
         return
 
     # Resolve selection
-    if selected_model.isdigit():
-        idx = int(selected_model) - 1
-        if 0 <= idx < len(models):
-            selected_model = models[idx]["id"]
-        else:
-            print_error(f"Invalid number: {selected_model}")
-            return
-        if len(matches) == 1:
-            selected_model = matches[0]["id"]
-        elif len(matches) > 1:
-            print_warning(f"Ambiguous: {', '.join(m['id'] for m in matches[:5])}")
-            return
-        else:
-            # Use as-is (user typed exact model name)
-            selected_model = selection
-
     # Save to config
     config.model = selected_model
     save_config(config)
