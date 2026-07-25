@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -11,6 +13,8 @@ from octopus.loop.models import (
     StreamEventType,
     ToolCallDelta,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class LiteLLMProvider:
@@ -60,9 +64,41 @@ class LiteLLMProvider:
         # Accumulate tool calls across chunks
         tool_calls: dict[int, ToolCallDelta] = {}
 
-        try:
-            response = await litellm.acompletion(**kwargs)
+        # Retry with exponential backoff for rate-limit errors
+        max_retries = 10
+        base_delay = 0.5
+        max_delay = 32.0
+        attempt = 0
 
+        while True:
+            attempt += 1
+            try:
+                response = await litellm.acompletion(**kwargs)
+                break  # success, exit retry loop
+            except Exception as exc:
+                exc_str = str(exc).lower()
+                # Check for 429 / 529 / rate-limit errors
+                is_rate_limit = (
+                    "429" in exc_str
+                    or "529" in exc_str
+                    or "rate" in exc_str
+                    or "overloaded" in exc_str
+                )
+                if is_rate_limit and attempt < max_retries:
+                    delay = min(base_delay * (2 ** (attempt - 1)), max_delay)
+                    logger.warning(
+                        "Rate limited (attempt %d/%d), retrying in %.1fs",
+                        attempt, max_retries, delay,
+                    )
+                    yield StreamEvent(
+                        type=StreamEventType.STATUS,
+                        text=f"[Rate limited, retrying in {delay:.1f}s (attempt {attempt}/{max_retries})]",
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                raise  # non-retryable or exhausted
+
+        try:
             async for chunk in response:
                 # Extract usage if present
                 if hasattr(chunk, "usage") and chunk.usage:

@@ -88,6 +88,9 @@ async def run_query(
                     text=f"[Compacted: {result.tokens_before} → {result.tokens_after} tokens via {result.strategy}]",
                 )
 
+        # Sanitize messages: remove orphaned tool_use/tool_result blocks
+        messages[:] = _sanitize_messages(messages)
+
         # Stream the model response
         collected_text: list[str] = []
         collected_tool_calls: list[ToolCallDelta] = []
@@ -386,6 +389,50 @@ def _strip_xml_tool_calls(text: str) -> str:
     text = re.sub(r"<tool_call>.*?</tool_call>", "", text, flags=re.DOTALL)
     text = re.sub(r"<function=.*?>.*?</function>", "", text, flags=re.DOTALL)
     return text.strip()
+
+
+def _sanitize_messages(messages: list[Message]) -> list[Message]:
+    """Remove orphaned tool_use / tool_result blocks and empty messages.
+
+    - assistant tool_use without matching tool_result  ->  remove that tool_use
+    - tool_result without matching tool_use             ->  drop the message
+    - empty messages                                    ->  drop
+    """
+    # Collect all tool_call_ids from assistant messages
+    tool_call_ids: set[str] = set()
+    for msg in messages:
+        if msg.role == Role.ASSISTANT and msg.tool_calls:
+            for tc in msg.tool_calls:
+                if tc.id:
+                    tool_call_ids.add(tc.id)
+
+    # Collect all tool_result ids
+    tool_result_ids: set[str] = set()
+    for msg in messages:
+        if msg.role == Role.TOOL and msg.tool_call_id:
+            tool_result_ids.add(msg.tool_call_id)
+
+    sanitized: list[Message] = []
+    for msg in messages:
+        # Drop orphaned tool_result messages
+        if msg.role == Role.TOOL and msg.tool_call_id not in tool_call_ids:
+            continue
+
+        # Strip orphaned tool_calls from assistant messages
+        if msg.role == Role.ASSISTANT and msg.tool_calls:
+            kept = [tc for tc in msg.tool_calls if tc.id in tool_result_ids]
+            if kept:
+                msg.tool_calls = kept
+            else:
+                msg.tool_calls = None
+
+        # Drop empty messages
+        if not msg.content and not msg.tool_calls:
+            continue
+
+        sanitized.append(msg)
+
+    return sanitized
 
 
 def _parse_code_block_calls(text: str) -> list[ToolCallDelta]:

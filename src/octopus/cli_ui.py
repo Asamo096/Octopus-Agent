@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.panel import Panel
 from rich.theme import Theme
 
 if TYPE_CHECKING:
@@ -161,8 +162,10 @@ def print_tool_call_result(
     result: str,
     *,
     is_error: bool = False,
+    tool_name: str | None = None,
+    args: str | None = None,
 ) -> None:
-    """Print tool call result.
+    """Print tool call result with per-tool-type rendering.
 
     Format:
     └ OK (123ms)
@@ -187,6 +190,117 @@ def print_tool_call_result(
             f"[dim]└[/] [green]OK[/] [dim]({duration_str})[/]",
             highlight=False,
         )
+        # Render output with per-tool-type styling
+        if result and result.strip():
+            _render_tool_output(tool_name or tc.name, result, args or tc.arguments)
+
+
+def _render_tool_output(
+    tool_name: str, output: str, args: str | None = None
+) -> None:
+    """Render tool output with per-tool-type styling.
+
+    - bash/shell: dim panel with command as title
+    - read/file_read: syntax-highlighted if extension recognized
+    - grep/search: cyan panel
+    - edit/file_edit: green panel
+    - default: dim text, truncated to 15 lines
+    """
+    name_lower = tool_name.lower()
+    max_lines = 15
+
+    def _truncate(text: str, limit: int) -> str:
+        lines = text.strip().splitlines()
+        if len(lines) <= limit:
+            return text.strip()
+        return "\n".join(lines[:limit]) + f"\n... +{len(lines) - limit} more lines"
+
+    # Extract file path from args if available
+    file_path = None
+    if args:
+        try:
+            import json as _json
+
+            parsed = _json.loads(args)
+            file_path = parsed.get("path") or parsed.get("file")
+        except (ValueError, TypeError):
+            pass
+
+    # bash / shell commands
+    if name_lower in ("shell", "bash", "execute_command", "run_command"):
+        # Show command as title if available
+        cmd_title = None
+        if args:
+            try:
+                import json as _json
+
+                parsed = _json.loads(args)
+                cmd_title = parsed.get("command", "")
+                if cmd_title and len(cmd_title) > 60:
+                    cmd_title = cmd_title[:57] + "..."
+            except (ValueError, TypeError):
+                pass
+        truncated = _truncate(output, max_lines)
+        console.print(
+            Panel(
+                truncated,
+                title=cmd_title or "shell",
+                border_style="dim",
+                expand=False,
+            ),
+            highlight=False,
+        )
+
+    # read / file_read
+    elif name_lower in ("read", "file_read", "read_file"):
+        if file_path:
+            ext = file_path.rsplit(".", 1)[-1].lower() if "." in file_path else ""
+            if ext in ("py", "python", "js", "ts", "jsx", "tsx", "rs", "go", "rb", "java", "c", "cpp", "h", "hpp", "css", "html", "json", "yaml", "yml", "toml", "sh", "bash", "zsh", "sql", "md", "xml", "swift", "kt", "scala", "lua", "r"):
+                try:
+                    from rich.syntax import Syntax
+
+                    syntax = Syntax(
+                        output.strip(),
+                        ext,
+                        theme="monokai",
+                        line_numbers=True,
+                    )
+                    console.print(syntax, highlight=False)
+                    return
+                except Exception:
+                    pass
+        # Fallback: dim panel
+        truncated = _truncate(output, max_lines)
+        console.print(
+            Panel(truncated, title=file_path or "read", border_style="dim", expand=False),
+            highlight=False,
+        )
+
+    # grep / search
+    elif name_lower in ("grep", "search", "search_files", "find_files"):
+        truncated = _truncate(output, max_lines)
+        console.print(
+            Panel(truncated, title=tool_name, border_style="cyan", expand=False),
+            highlight=False,
+        )
+
+    # edit / file_edit
+    elif name_lower in ("edit", "file_edit", "edit_file"):
+        truncated = _truncate(output, max_lines)
+        console.print(
+            Panel(
+                truncated,
+                title=file_path or "edit",
+                border_style="green",
+                expand=False,
+            ),
+            highlight=False,
+        )
+
+    # default: dim text with truncation
+    else:
+        truncated = _truncate(output, max_lines)
+        console.print(f"  [dim]{truncated}[/]", highlight=False)
 
 
 def print_tool_call_output(output: str, *, max_lines: int = 10) -> None:

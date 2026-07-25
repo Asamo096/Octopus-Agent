@@ -12,6 +12,8 @@ import time
 import uuid
 from pathlib import Path
 
+from rich.live import Live
+
 from octopus.cli_ui import (
     TurnStats,
     console,
@@ -197,30 +199,49 @@ async def run_single_prompt_async(
         tool_call_count = 0
         collected_text: list[str] = []
 
-        async for event in run_query(
-            conversation.messages,
-            provider,
-            kernel,
-            registry,
-            ctx,
-            model=_resolve_model(model),
-            conversation=conversation,
-            compaction=compaction,
-        ):
-            if event.type == StreamEventType.TEXT:
-                collected_text.append(event.text or "")
-                print_assistant_text_stream(event.text or "")
-            elif event.type == StreamEventType.TOOL_CALL:
-                tc = event.tool_call
-                if tc:
-                    tool_call_count += 1
-                    print_tool_call_start(tc.name, tc.arguments)
-            elif event.type == StreamEventType.STATUS:
-                print_status(event.text or "")
-            elif event.type == StreamEventType.ERROR:
-                print_error(event.error or "Unknown error")
-            elif event.type == StreamEventType.DONE:
-                pass
+        # Show thinking spinner while waiting for first token
+        _first_content_arrived = False
+        with Live(
+            console.status("[dim]Thinking...[/]", spinner="dots"),
+            console=console,
+            refresh_per_second=8,
+            transient=True,
+        ) as live:
+            async for event in run_query(
+                conversation.messages,
+                provider,
+                kernel,
+                registry,
+                ctx,
+                model=_resolve_model(model),
+                conversation=conversation,
+                compaction=compaction,
+            ):
+                # Stop spinner on first content event
+                if not _first_content_arrived and event.type in (
+                    StreamEventType.TEXT, StreamEventType.TOOL_CALL
+                ):
+                    _first_content_arrived = True
+                    live.stop()
+
+                if event.type == StreamEventType.TEXT:
+                    collected_text.append(event.text or "")
+                    print_assistant_text_stream(event.text or "")
+                elif event.type == StreamEventType.TOOL_CALL:
+                    tc = event.tool_call
+                    if tc:
+                        tool_call_count += 1
+                        print_tool_call_start(tc.name, tc.arguments)
+                elif event.type == StreamEventType.STATUS:
+                    if not _first_content_arrived:
+                        live.stop()
+                        _first_content_arrived = True
+                    print_status(event.text or "")
+                elif event.type == StreamEventType.ERROR:
+                    live.stop()
+                    print_error(event.error or "Unknown error")
+                elif event.type == StreamEventType.DONE:
+                    pass
 
         if collected_text:
             print_stream_newline()
@@ -380,44 +401,64 @@ async def run_interactive_async(
             # Reset interrupt flag at start of each turn
             _interrupt_requested = False
 
-            async for event in run_query(
-                conversation.messages,
-                provider,
-                kernel,
-                registry,
-                ctx,
-                model=_resolve_model(model),
-                conversation=conversation,
-                compaction=compaction,
-            ):
-                # Check for interrupt request (Escape key)
-                if _interrupt_requested:
-                    console.print("\n[dim]Interrupted.[/]")
-                    break
+            # Show thinking spinner while waiting for first token
+            _first_content_arrived = False
+            with Live(
+                console.status("[dim]Thinking...[/]", spinner="dots"),
+                console=console,
+                refresh_per_second=8,
+                transient=True,
+            ) as live:
+                async for event in run_query(
+                    conversation.messages,
+                    provider,
+                    kernel,
+                    registry,
+                    ctx,
+                    model=_resolve_model(model),
+                    conversation=conversation,
+                    compaction=compaction,
+                ):
+                    # Check for interrupt request (Escape key)
+                    if _interrupt_requested:
+                        live.stop()
+                        console.print("\n[dim]Interrupted.[/]")
+                        break
 
-                if event.type == StreamEventType.TEXT:
-                    collected_text.append(event.text or "")
+                    # Stop spinner on first content event
+                    if not _first_content_arrived and event.type in (
+                        StreamEventType.TEXT, StreamEventType.TOOL_CALL
+                    ):
+                        _first_content_arrived = True
+                        live.stop()
 
-                elif event.type == StreamEventType.TOOL_CALL:
-                    tc = event.tool_call
-                    if tc:
-                        turn_tool_calls += 1
-                        session_tool_calls += 1
-                        # Finish previous tool if still open
-                        if current_tool is not None:
-                            print_tool_call_result(current_tool, "")
-                        # Print new tool with newline prefix
-                        console.print()
-                        current_tool = print_tool_call_start(tc.name, tc.arguments)
+                    if event.type == StreamEventType.TEXT:
+                        collected_text.append(event.text or "")
 
-                elif event.type == StreamEventType.STATUS:
-                    print_status(event.text or "")
+                    elif event.type == StreamEventType.TOOL_CALL:
+                        tc = event.tool_call
+                        if tc:
+                            turn_tool_calls += 1
+                            session_tool_calls += 1
+                            # Finish previous tool if still open
+                            if current_tool is not None:
+                                print_tool_call_result(current_tool, "")
+                            # Print new tool with newline prefix
+                            console.print()
+                            current_tool = print_tool_call_start(tc.name, tc.arguments)
 
-                elif event.type == StreamEventType.ERROR:
-                    print_error(event.error or "Unknown error")
+                    elif event.type == StreamEventType.STATUS:
+                        if not _first_content_arrived:
+                            live.stop()
+                            _first_content_arrived = True
+                        print_status(event.text or "")
 
-                elif event.type == StreamEventType.DONE:
-                    pass
+                    elif event.type == StreamEventType.ERROR:
+                        live.stop()
+                        print_error(event.error or "Unknown error")
+
+                    elif event.type == StreamEventType.DONE:
+                        pass
 
             # Close any unclosed tool
             if current_tool is not None:
