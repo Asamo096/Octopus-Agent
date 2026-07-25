@@ -25,9 +25,10 @@ from typing import Any, Protocol
 class PermissionMode(Enum):
     """Permission modes for the kernel."""
 
-    DEFAULT = "default"  # Confirm mutating operations
-    PLAN = "plan"  # Block all writes
-    FULL_AUTO = "full_auto"  # Allow everything
+    DEFAULT = "default"  # Confirm all operations (manual mode)
+    PLAN = "plan"  # Allow write/read/delete, block execution
+    ACCEPT_EDITS = "accept_edits"  # Allow write/read/delete, block execution
+    FULL_AUTO = "full_auto"  # Allow everything (no permission checks)
 
 
 @dataclass
@@ -226,37 +227,40 @@ class Kernel:
                 output=None,
                 error=f"Permission denied: {perm_result.reason}",
             )
-        if perm_result.requires_approval:
-            # In FULL_AUTO mode, auto-approve
-            if self.permission_mode == PermissionMode.FULL_AUTO:
-                pass  # Auto-approve
-            # In DEFAULT mode, prompt user for approval
-            elif self.permission_mode == PermissionMode.DEFAULT:
-                if self._permission_prompt is not None:
-                    approved = await self._permission_prompt(
-                        tool_call.tool_name,
-                        tool_call.arguments,
-                        perm_result.reason or "Approval required",
-                    )
-                    if not approved:
-                        duration = time.monotonic() - start_time
-                        await self._log_audit(tool_call, ctx, None, duration, "USER_DENIED")
-                        return ToolResult(
-                            success=False,
-                            output=None,
-                            error="Permission denied by user",
-                        )
-                # If no prompt callback, auto-approve (for non-interactive mode)
-            # In PLAN mode, block write operations
-            elif self.permission_mode == PermissionMode.PLAN:
-                if self._is_write_tool(tool_call.tool_name):
+        # Permission mode logic:
+        # - FULL_AUTO: auto-approve everything
+        # - DEFAULT (manual): require approval for ALL operations
+        # - PLAN/ACCEPT_EDITS: allow write/read/delete, block execution (shell)
+        if self.permission_mode == PermissionMode.FULL_AUTO:
+            # Auto-approve everything
+            pass
+        elif self.permission_mode == PermissionMode.DEFAULT:
+            # Manual mode: require approval for ALL operations
+            if self._permission_prompt is not None:
+                approved = await self._permission_prompt(
+                    tool_call.tool_name,
+                    tool_call.arguments,
+                    perm_result.reason or "Approval required",
+                )
+                if not approved:
                     duration = time.monotonic() - start_time
-                    await self._log_audit(tool_call, ctx, None, duration, "PLAN_BLOCKED")
+                    await self._log_audit(tool_call, ctx, None, duration, "USER_DENIED")
                     return ToolResult(
                         success=False,
                         output=None,
-                        error="Write operations blocked in plan mode",
+                        error="Permission denied by user",
                     )
+            # If no prompt callback, auto-approve (for non-interactive mode)
+        elif self.permission_mode in (PermissionMode.PLAN, PermissionMode.ACCEPT_EDITS):
+            # Accept edits & plan mode: allow write/read/delete, block shell execution
+            if tool_call.tool_name == "shell":
+                duration = time.monotonic() - start_time
+                await self._log_audit(tool_call, ctx, None, duration, "EXECUTION_BLOCKED")
+                return ToolResult(
+                    success=False,
+                    output=None,
+                    error="Shell execution blocked in this mode. Switch to manual or auto mode.",
+                )
 
         # ---- Step 3: Sandbox validation ----
         if tool_call.tool_name in ("write_file", "edit_file", "shell"):

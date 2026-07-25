@@ -137,6 +137,7 @@ def _resolve_permission_mode(mode_str: str) -> PermissionMode:
     mapping = {
         "default": PermissionMode.DEFAULT,
         "plan": PermissionMode.PLAN,
+        "accept_edits": PermissionMode.ACCEPT_EDITS,
         "full_auto": PermissionMode.FULL_AUTO,
     }
     return mapping.get(mode_str, PermissionMode.DEFAULT)
