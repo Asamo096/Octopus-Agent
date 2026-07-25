@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from octopus.core.hooks import Hook, HookType
 from octopus.plugins.loader import discover_plugins, load_plugin_module
 from octopus.plugins.schemas import PluginManifest
 
@@ -109,7 +110,7 @@ class PluginManager:
 
         Returns the number of hooks loaded.
         """
-        from octopus.core.hooks import Hook, HookEvent
+        from octopus.core.hooks import HookEvent
 
         count = 0
         for name, info in self._plugins.items():
@@ -141,7 +142,7 @@ class PluginManager:
                             )
                             continue
 
-                        hook = Hook(f"{name}:{func_name}", func)
+                        hook = Hook(f"{name}:{func_name}", HookType.PYTHON, event, callback=func)
                         hook_manager.register(event, hook)
                         info.loaded_hooks.append(hook)
                         count += 1

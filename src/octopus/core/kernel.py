@@ -203,7 +203,7 @@ class Kernel:
             "context": ctx,
         }
         hook_result = await self.hooks.fire(HookEvent.PRE_TOOL_USE, hook_data)
-        if not hook_result.continue_execution:
+        if hook_result.blocked:
             return ToolResult(
                 success=False,
                 output=None,
