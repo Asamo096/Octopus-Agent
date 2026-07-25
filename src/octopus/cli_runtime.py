@@ -487,10 +487,17 @@ async def run_interactive_async(
             if current_tool is not None:
                 print_tool_call_result(current_tool, "")
 
-            # Render response as markdown
+            # Render response as markdown (strip XML tool calls first)
             if collected_text:
                 full_text = "".join(collected_text)
-                if full_text.strip():
+                # Strip XML tool calls and model artifacts
+                import re
+                full_text = re.sub(r"<tool_call>.*?</tool_call>", "", full_text, flags=re.DOTALL)
+                full_text = re.sub(r"<function=.*?>.*?</function>", "", full_text, flags=re.DOTALL)
+                full_text = re.sub(r"<thinking>.*?</thinking>", "", full_text, flags=re.DOTALL)
+                full_text = re.sub(r"<\|.*?\|>", "", full_text)
+                full_text = full_text.strip()
+                if full_text:
                     console.print()
                     print_assistant_markdown(full_text)
 

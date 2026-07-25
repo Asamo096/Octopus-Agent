@@ -296,10 +296,16 @@ async def run_query(
             yield StreamEvent(type=StreamEventType.DONE)
             return
 
+        # Strip any remaining XML tool calls from the text before displaying
+        final_text = "".join(collected_text)
+        if final_text:
+            final_text = _strip_xml_tool_calls(final_text)
+            final_text = _strip_model_artifacts(final_text)
+
         # Build assistant message with tool calls
         assistant_msg = Message(
             role=Role.ASSISTANT,
-            content="".join(collected_text) or None,
+            content=final_text or None,
             tool_calls=collected_tool_calls,
         )
         messages.append(assistant_msg)
