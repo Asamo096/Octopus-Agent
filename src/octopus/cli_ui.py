@@ -145,7 +145,7 @@ def select_option(
                     console.print(f"    [dim]{opt}[/]")
 
             console.print()
-            console.print("  [dim][up/down] Navigate  [enter] Confirm  [esc] Cancel[/]")
+            console.print("  [dim][[up/down]] Navigate  [[enter]] Confirm  [[esc]] Cancel[/]")
 
             # Wait for keypress (raw mode)
             fd = sys.stdin.fileno()
