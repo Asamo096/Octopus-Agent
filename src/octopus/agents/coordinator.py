@@ -1,11 +1,16 @@
-"""Agent coordinator — orchestrates multiple agents for complex tasks."""
+"""Agent coordinator -- orchestrates multiple agents for complex tasks.
+
+Supports spawning agents, running them in parallel or sequentially,
+and background worker agents with per-worker budgets.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 import uuid
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Literal
 
 from octopus.agents.base import AgentDefinition
 from octopus.agents.llm_agent import LLMAgent
@@ -16,12 +21,136 @@ from octopus.tools.base import ToolRegistry
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Worker agent (Pattern 9)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class WorkerConfig:
+    """Configuration for a background worker agent.
+
+    Workers run autonomously with their own budget constraints
+    and optional tool restrictions.
+    """
+
+    task: str
+    agent_type: str = "general"
+    model: str | None = None
+    max_turns: int = 10
+    max_cost_usd: float | None = None
+    allowed_tools: list[str] | None = None
+    isolation: Literal["none", "worktree"] = "none"
+
+
+class WorkerAgent:
+    """Background agent worker that runs autonomously.
+
+    Each worker has its own message history, budget, and execution context.
+    The coordinator injects task context and monitors progress.
+
+    Usage:
+        config = WorkerConfig(task="Fix the lint errors", max_turns=5)
+        worker = WorkerAgent("w1", config, provider, kernel, registry)
+        await worker.start()
+        result = await worker.wait(timeout=60)
+    """
+
+    def __init__(
+        self,
+        worker_id: str,
+        config: WorkerConfig,
+        provider: Provider,
+        kernel: Kernel,
+        registry: ToolRegistry,
+    ) -> None:
+        self.worker_id = worker_id
+        self.config = config
+        self._provider = provider
+        self._kernel = kernel
+        self._registry = registry
+        self._agent: LLMAgent | None = None
+        self._task: asyncio.Task[str] | None = None
+        self.result: str | None = None
+        self.status: str = "pending"
+
+    async def start(self) -> None:
+        """Start the worker in the background."""
+        self.status = "running"
+        self._task = asyncio.create_task(self._run(), name=f"worker-{self.worker_id}")
+
+    async def _run(self) -> str:
+        """Execute the worker's task."""
+        try:
+            definition = AgentDefinition(
+                name=f"worker-{self.worker_id}",
+                description=f"Background worker: {self.config.task[:80]}",
+                model=self.config.model,
+                tools=self.config.allowed_tools or [],
+                max_turns=self.config.max_turns,
+            )
+
+            self._agent = LLMAgent(
+                definition,
+                self._kernel,
+                self._provider,
+                self._registry,
+            )
+
+            self.result = await self._agent.run(self.config.task)
+            self.status = "completed"
+            return self.result
+        except asyncio.CancelledError:
+            self.status = "cancelled"
+            raise
+        except Exception as exc:
+            self.status = "failed"
+            self.result = f"Worker failed: {exc}"
+            logger.error("Worker %s failed: %s", self.worker_id, exc)
+            return self.result
+
+    async def wait(self, timeout: float | None = None) -> str | None:
+        """Wait for the worker to complete.
+
+        Args:
+            timeout: Maximum seconds to wait. None means wait forever.
+
+        Returns:
+            The worker's result text, or None if it hasn't completed.
+
+        Raises:
+            asyncio.TimeoutError: If timeout is exceeded.
+        """
+        if self._task is None:
+            return self.result
+
+        try:
+            await asyncio.wait_for(self._task, timeout=timeout)
+        except asyncio.TimeoutError:
+            raise
+        return self.result
+
+    def cancel(self) -> None:
+        """Cancel the running worker."""
+        if self._agent:
+            asyncio.ensure_future(self._agent.stop())
+        if self._task and not self._task.done():
+            self._task.cancel()
+            self.status = "cancelled"
+
+
+# ---------------------------------------------------------------------------
+# Agent coordinator
+# ---------------------------------------------------------------------------
+
+
 class AgentCoordinator:
     """Orchestrates multiple agents for complex multi-step tasks.
 
     Supports:
     - Spawning agents with specific definitions
     - Running agents in parallel or sequentially
+    - Background worker agents with per-worker budgets
     - Inter-agent communication via shared results
     - Collecting and merging results
 
@@ -46,6 +175,7 @@ class AgentCoordinator:
         self._agents: dict[str, LLMAgent] = {}
         self._tasks: dict[str, asyncio.Task[str]] = {}
         self._results: dict[str, str] = {}
+        self._workers: dict[str, WorkerAgent] = {}
 
     async def spawn(
         self,
@@ -120,9 +250,11 @@ class AgentCoordinator:
             task.cancel()
 
     async def stop_all(self) -> None:
-        """Stop all running agents."""
+        """Stop all running agents and workers."""
         for agent_id in list(self._agents.keys()):
             await self.stop(agent_id)
+        for worker_id in list(self._workers.keys()):
+            self.stop_worker(worker_id)
 
     def list_agents(self) -> list[dict[str, Any]]:
         """List all agents and their status."""
@@ -194,3 +326,75 @@ class AgentCoordinator:
             results.append(result)
 
         return results
+
+    # -------------------------------------------------------------------
+    # Worker agent management (Pattern 9)
+    # -------------------------------------------------------------------
+
+    def spawn_worker(self, config: WorkerConfig) -> str:
+        """Spawn a background worker agent.
+
+        The worker runs autonomously with its own budget constraints.
+        Use start_worker() to begin execution and wait_worker() to
+        collect results.
+
+        Args:
+            config: Worker configuration
+
+        Returns:
+            Worker ID for later reference
+        """
+        worker_id = uuid.uuid4().hex[:8]
+        worker = WorkerAgent(
+            worker_id=worker_id,
+            config=config,
+            provider=self._provider,
+            kernel=self._kernel,
+            registry=self._registry,
+        )
+        self._workers[worker_id] = worker
+        logger.info(
+            "Spawned worker %s for task: %s", worker_id, config.task[:100]
+        )
+        return worker_id
+
+    async def start_worker(self, worker_id: str) -> None:
+        """Start a previously spawned worker."""
+        worker = self._workers.get(worker_id)
+        if worker is None:
+            raise KeyError(f"Worker {worker_id} not found")
+        await worker.start()
+
+    async def wait_worker(
+        self, worker_id: str, timeout: float | None = None
+    ) -> str | None:
+        """Wait for a worker to complete and return its result.
+
+        Args:
+            worker_id: The worker ID returned by spawn_worker()
+            timeout: Maximum seconds to wait
+
+        Returns:
+            The worker's result text
+        """
+        worker = self._workers.get(worker_id)
+        if worker is None:
+            return None
+        return await worker.wait(timeout=timeout)
+
+    def stop_worker(self, worker_id: str) -> None:
+        """Cancel a running worker."""
+        worker = self._workers.get(worker_id)
+        if worker:
+            worker.cancel()
+
+    def list_workers(self) -> list[dict[str, Any]]:
+        """List all workers and their status."""
+        return [
+            {
+                "id": w.worker_id,
+                "status": w.status,
+                "task": w.config.task[:100],
+            }
+            for w in self._workers.values()
+        ]

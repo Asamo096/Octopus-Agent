@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 
 from octopus.core.kernel import Context, Kernel, ToolCall, ToolResult
 from octopus.loop.compaction import CompactionEngine
@@ -35,6 +36,70 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_TURNS = 50
 
 
+# ---------------------------------------------------------------------------
+# Budget enforcement (Pattern 7)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class BudgetViolation:
+    """Represents a budget constraint violation."""
+
+    type: str
+    message: str
+    current: float | int
+    limit: float | int
+
+
+@dataclass
+class LoopBudget:
+    """Budget constraints for agent loop execution.
+
+    All fields are optional. None means no limit for that dimension.
+    Checked before each turn in the agent loop.
+    """
+
+    max_turns: int | None = None
+    max_tool_calls: int | None = None
+    max_input_tokens: int | None = None
+
+    def check(
+        self,
+        turn_count: int,
+        tool_call_count: int,
+        total_input_tokens: int = 0,
+    ) -> BudgetViolation | None:
+        """Check if any budget constraint is violated.
+
+        Returns a BudgetViolation if a limit was exceeded, None otherwise.
+        """
+        if self.max_turns is not None and turn_count >= self.max_turns:
+            return BudgetViolation(
+                type="max_turns",
+                message=f"Reached maximum number of turns ({self.max_turns})",
+                current=turn_count,
+                limit=self.max_turns,
+            )
+
+        if self.max_tool_calls is not None and tool_call_count >= self.max_tool_calls:
+            return BudgetViolation(
+                type="max_tool_calls",
+                message=f"Reached maximum tool calls ({self.max_tool_calls})",
+                current=tool_call_count,
+                limit=self.max_tool_calls,
+            )
+
+        if self.max_input_tokens is not None and total_input_tokens >= self.max_input_tokens:
+            return BudgetViolation(
+                type="max_input_tokens",
+                message=f"Reached maximum input tokens ({self.max_input_tokens})",
+                current=total_input_tokens,
+                limit=self.max_input_tokens,
+            )
+
+        return None
+
+
 async def run_query(
     messages: list[Message],
     provider: Provider,
@@ -47,19 +112,25 @@ async def run_query(
     max_turns: int = DEFAULT_MAX_TURNS,
     conversation: ConversationContext | None = None,
     compaction: CompactionEngine | None = None,
+    budget: LoopBudget | None = None,
 ) -> AsyncIterator[StreamEvent]:
     """Run the agent loop.
 
-    Yields StreamEvents as they arrive — TEXT for assistant output,
+    Yields StreamEvents as they arrive -- TEXT for assistant output,
     TOOL_CALL when a tool is invoked, USAGE for token counts,
     ERROR on failure, and DONE when finished.
 
     If a ConversationContext is provided, messages are synced to it and
     auto-compaction runs before each API call. If a CompactionEngine is
     provided without a ConversationContext, it is ignored.
+
+    If a LoopBudget is provided, budget constraints are checked before
+    each turn and execution stops gracefully on violation.
     """
     tools_def = registry.list_definitions()
     turns = 0
+    tool_call_count = 0
+    total_input_tokens = 0
 
     # Sync messages into conversation context if provided
     if conversation is not None:
@@ -72,6 +143,22 @@ async def run_query(
     while turns < max_turns:
         turns += 1
         logger.debug("Turn %d/%d", turns, max_turns)
+
+        # Budget enforcement check before each turn
+        if budget is not None:
+            violation = budget.check(turns, tool_call_count, total_input_tokens)
+            if violation is not None:
+                logger.warning(
+                    "Budget violation: %s (%s)",
+                    violation.type,
+                    violation.message,
+                )
+                yield StreamEvent(
+                    type=StreamEventType.ERROR,
+                    error=f"Budget exceeded: {violation.message}",
+                )
+                yield StreamEvent(type=StreamEventType.DONE)
+                return
 
         # Auto-compact before API call if conversation context is available
         if conversation is not None and compaction is not None:
@@ -105,6 +192,8 @@ async def run_query(
                 elif event.type == StreamEventType.TOOL_CALL and event.tool_call:
                     collected_tool_calls.append(event.tool_call)
                 elif event.type == StreamEventType.USAGE:
+                    if event.usage:
+                        total_input_tokens += event.usage.get("prompt_tokens", 0)
                     yield event
                 elif event.type == StreamEventType.ERROR:
                     yield event
@@ -214,6 +303,7 @@ async def run_query(
             tool_calls=collected_tool_calls,
         )
         messages.append(assistant_msg)
+        tool_call_count += len(collected_tool_calls)
 
         # Execute tool calls (parallel)
         tool_tasks = [

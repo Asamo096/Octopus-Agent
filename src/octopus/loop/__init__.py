@@ -1,9 +1,21 @@
-"""Octopus Agent Loop — agent loop engine, context management, and compaction."""
+"""Octopus Agent Loop -- agent loop engine, context management, and compaction."""
 
-from .compaction import CompactionEngine, CompactionStrategy
+from .compaction import (
+    CompactionEngine,
+    CompactionResult,
+    CompactionStrategy,
+    MicrocompactConfig,
+)
 from .context import ConversationContext
 from .engine import run_query
-from .models import Message, Role, StreamEvent, StreamEventType, ToolCallDelta
+from .models import (
+    CompactBoundaryData,
+    Message,
+    Role,
+    StreamEvent,
+    StreamEventType,
+    ToolCallDelta,
+)
 
 __all__ = [
     "run_query",
@@ -14,5 +26,8 @@ __all__ = [
     "ToolCallDelta",
     "ConversationContext",
     "CompactionEngine",
+    "CompactionResult",
     "CompactionStrategy",
+    "MicrocompactConfig",
+    "CompactBoundaryData",
 ]

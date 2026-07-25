@@ -81,3 +81,26 @@ class StreamEvent:
     tool_call: ToolCallDelta | None = None
     usage: dict[str, int] | None = None
     error: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Compact boundary data
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CompactBoundaryData:
+    """Metadata for a compaction boundary message.
+
+    After compaction, a boundary message is inserted into the conversation.
+    Messages after the boundary are the active context; messages before
+    the boundary have been summarized and can be released.
+    This enables session resume from the compaction point.
+    """
+
+    strategy: str
+    original_count: int
+    compacted_count: int
+    tokens_before: int
+    tokens_after: int
+    extracted_memories: list[str] | None = None
