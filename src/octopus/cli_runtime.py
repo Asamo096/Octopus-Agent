@@ -130,12 +130,16 @@ async def _setup_runtime(
     # Load provider config from auth.json + config.toml
     config = load_config()
     auth = load_auth()
-    provider_config = config.provider_config
 
-    api_key = auth.openai_api_key
-    base_url = provider_config.base_url if provider_config else None
+    # Find the provider with a non-empty base_url (there may be multiple entries;
+    # model_provider is the litellm prefix, but base_url may be on another entry)
+    base_url: str | None = None
+    for p in config.model_providers.values():
+        if p.base_url:
+            base_url = p.base_url
+            break
 
-    provider = LiteLLMProvider(api_key=api_key, base_url=base_url)
+    provider = LiteLLMProvider(api_key=auth.openai_api_key, base_url=base_url)
 
     ctx = Context(
         session_id=str(uuid.uuid4()),
