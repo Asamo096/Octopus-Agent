@@ -7,7 +7,9 @@ matching claude-code's terminal patterns.
 
 from __future__ import annotations
 
+import copy
 import json
+import os
 import time
 import uuid
 from pathlib import Path
@@ -16,11 +18,15 @@ from typing import Any
 from rich.live import Live
 
 from octopus.cli_ui import (
+    COLOR_PRESETS,
+    SLASH_COMMANDS,
     TurnStats,
     console,
     display_banner,
     print_assistant_markdown,
     print_assistant_text_stream,
+    print_background_message,
+    print_context_grid,
     print_error,
     print_help,
     print_info,
@@ -412,8 +418,6 @@ async def run_interactive_async(
         # Set up slash command completer
         from prompt_toolkit.completion import Completer, Completion
 
-        from octopus.cli_ui import SLASH_COMMANDS
-
         class SlashCompleter(Completer):
             """Custom completer for slash commands that filters as user types."""
 
@@ -449,6 +453,125 @@ async def run_interactive_async(
         session_tokens_out = 0
         session_tool_calls = 0
 
+        # Additional working directories for this session
+        _additional_dirs: list[Path] = []
+        # Color preset index for /color cycling
+        _color_index = 0
+
+        async def _handle_slash_command(
+            command: str,
+            conversation: ConversationContext,
+        ) -> tuple[bool, ConversationContext]:
+            """Handle slash commands. Returns (should_exit, conversation).
+
+            The conversation reference may change on /clear and /branch.
+            """
+            nonlocal _color_index, prompt_style, session_cost, session_tokens_in
+            nonlocal session_tokens_out, session_tool_calls
+
+            parts = command.strip().split()
+            cmd = parts[0].lower()
+            args = " ".join(parts[1:]) if len(parts) > 1 else ""
+
+            # /exit, /quit, /q
+            if cmd in ("/exit", "/quit", "/q"):
+                console.print("[dim]Goodbye![/]")
+                return True, conversation
+
+            # /help
+            if cmd == "/help":
+                print_help()
+                return False, conversation
+
+            # /init -- generate OCTOPUS.md
+            if cmd == "/init":
+                await _handle_init_command(conversation)
+                return False, conversation
+
+            # /add-dir <path>
+            if cmd == "/add-dir":
+                _handle_add_dir_command(args, _additional_dirs)
+                return False, conversation
+
+            # /background
+            if cmd == "/background":
+                print_background_message()
+                return False, conversation
+
+            # /branch
+            if cmd == "/branch":
+                conversation = await _handle_branch_command(
+                    conversation, kernel, ctx
+                )
+                return False, conversation
+
+            # /btw <question>
+            if cmd == "/btw":
+                await _handle_btw_command(args, conversation, provider, kernel, ctx)
+                return False, conversation
+
+            # /cd <path>
+            if cmd == "/cd":
+                _handle_cd_command(args, kernel)
+                return False, conversation
+
+            # /clear
+            if cmd == "/clear":
+                conversation = await _handle_clear_command(
+                    conversation, kernel, ctx, model
+                )
+                # Reset session counters
+                session_cost = 0.0
+                session_tokens_in = 0
+                session_tokens_out = 0
+                session_tool_calls = 0
+                return False, conversation
+
+            # /color
+            if cmd == "/color":
+                _color_index, prompt_style = _handle_color_command(
+                    args, _color_index
+                )
+                return False, conversation
+
+            # /compact
+            if cmd == "/compact":
+                await _handle_compact_command(
+                    conversation, compaction, kernel
+                )
+                return False, conversation
+
+            # /config
+            if cmd == "/config":
+                _handle_config_command(command)
+                return False, conversation
+
+            # /context
+            if cmd == "/context":
+                _handle_context_command(conversation, compaction)
+                return False, conversation
+
+            # /model
+            if cmd == "/model":
+                await _handle_model_command(conversation)
+                return False, conversation
+
+            # /tokens
+            if cmd == "/tokens":
+                tokens = conversation.estimate_tokens()
+                console.print(f"[tokens]Estimated tokens: {tokens:,}[/]")
+                return False, conversation
+
+            # /reset
+            if cmd == "/reset":
+                conversation.clear()
+                conversation.ensure_system_message()
+                print_info("Conversation reset.")
+                return False, conversation
+
+            print_error(f"Unknown command: {command}")
+            return False, conversation
+
         while True:
             # Show status bar before prompt
             print_status_bar(permission_mode)
@@ -470,13 +593,11 @@ async def run_interactive_async(
 
             # Handle slash commands
             if user_input.strip().startswith("/"):
-                if await _handle_slash_command(
+                should_exit, conversation = await _handle_slash_command(
                     user_input.strip(),
                     conversation,
-                    session_cost=session_cost,
-                    session_tokens_in=session_tokens_in,
-                    session_tokens_out=session_tokens_out,
-                ):
+                )
+                if should_exit:
                     break
                 continue
 
@@ -603,54 +724,6 @@ async def run_interactive_async(
         await kernel.shutdown()
 
 
-async def _handle_slash_command(
-    command: str,
-    conversation: ConversationContext,
-    *,
-    session_cost: float = 0.0,
-    session_tokens_in: int = 0,
-    session_tokens_out: int = 0,
-) -> bool:
-    """Handle slash commands. Returns True if should exit."""
-    cmd = command.lower().split()[0]  # Get first word
-
-    if cmd in ("/exit", "/quit", "/q"):
-        console.print("[dim]Goodbye![/]")
-        return True
-
-    if cmd == "/clear":
-        console.clear()
-        return False
-
-    if cmd == "/reset":
-        conversation.clear()
-        conversation.ensure_system_message()
-        print_info("Conversation reset.")
-        return False
-
-    if cmd == "/tokens":
-        tokens = conversation.estimate_tokens()
-        console.print(f"[tokens]Estimated tokens: {tokens:,}[/]")
-        return False
-
-    if cmd == "/compact":
-        print_info("Compaction not yet implemented in this session.")
-        return False
-
-    if cmd == "/model":
-        await _handle_model_command(conversation)
-        return False
-
-    if cmd == "/config":
-        _handle_config_command(command)
-        return False
-
-    if cmd == "/help":
-        print_help()
-        return False
-
-    print_error(f"Unknown command: {command}")
-    return False
 
 
 async def _handle_model_command(conversation: ConversationContext) -> None:
@@ -864,6 +937,529 @@ def _handle_config_command(command: str) -> None:
     console.print("  /config set provider <p>  — set provider name")
     console.print("  /config set base_url <u>  — set provider base URL")
     console.print("  /config set api_key <key> — set OPENAI_API_KEY")
+
+
+# ---------------------------------------------------------------------------
+# /init handler
+# ---------------------------------------------------------------------------
+
+
+async def _handle_init_command(conversation: ConversationContext) -> None:
+    """Generate OCTOPUS.md with project overview, structure, and conventions.
+
+    Scans the workspace directory, detects project type, and generates
+    a comprehensive OCTOPUS.md file.
+    """
+    workspace = Path.cwd()
+
+    # Scan for project indicators
+    indicators: dict[str, Path] = {}
+    manifest_files = [
+        "pyproject.toml",
+        "package.json",
+        "Cargo.toml",
+        "go.mod",
+        "pom.xml",
+        "build.gradle",
+        "Makefile",
+        "CMakeLists.txt",
+        ".git",
+    ]
+    for fname in manifest_files:
+        p = workspace / fname
+        if p.exists():
+            indicators[fname] = p
+
+    # Detect project type
+    project_type = "unknown"
+    languages: list[str] = []
+    build_commands: list[str] = []
+    test_commands: list[str] = []
+    lint_commands: list[str] = []
+
+    if "pyproject.toml" in indicators:
+        project_type = "Python"
+        languages.append("Python")
+        try:
+            content = (workspace / "pyproject.toml").read_text()
+            if "hatchling" in content:
+                build_commands.append("pip install -e .")
+            if "pytest" in content:
+                test_commands.append("pytest")
+            if "ruff" in content:
+                lint_commands.append("ruff check .")
+                lint_commands.append("ruff format --check .")
+            if "mypy" in content:
+                lint_commands.append("mypy src/")
+        except Exception:
+            pass
+    if "package.json" in indicators:
+        project_type = "Node.js/TypeScript"
+        languages.append("TypeScript")
+        languages.append("JavaScript")
+        try:
+            import json as _json
+
+            pkg = _json.loads((workspace / "package.json").read_text())
+            scripts = pkg.get("scripts", {})
+            if "build" in scripts:
+                build_commands.append("npm run build")
+            if "test" in scripts:
+                test_commands.append("npm test")
+            if "lint" in scripts:
+                lint_commands.append("npm run lint")
+        except Exception:
+            pass
+    if "Cargo.toml" in indicators:
+        project_type = "Rust"
+        languages.append("Rust")
+        build_commands.append("cargo build")
+        test_commands.append("cargo test")
+        lint_commands.append("cargo clippy")
+    if "go.mod" in indicators:
+        project_type = "Go"
+        languages.append("Go")
+        build_commands.append("go build ./...")
+        test_commands.append("go test ./...")
+        lint_commands.append("golangci-lint run")
+
+    # Collect top-level directory structure
+    dir_entries: list[str] = []
+    try:
+        for entry in sorted(workspace.iterdir()):
+            name = entry.name
+            if name.startswith(".") and name not in (".github", ".gitignore"):
+                continue
+            if name in ("__pycache__", "node_modules", ".venv", "venv", "dist", "build", "target"):
+                continue
+            if entry.is_dir():
+                dir_entries.append(f"  {name}/")
+            else:
+                dir_entries.append(f"  {name}")
+    except PermissionError:
+        pass
+
+    # Check for existing conventions files
+    conventions: list[str] = []
+    for conv_file in (".editorconfig", ".prettierrc", ".eslintrc", "ruff.toml", ".ruff.toml"):
+        if (workspace / conv_file).exists():
+            conventions.append(conv_file)
+    if (workspace / ".github" / "workflows").exists():
+        conventions.append(".github/workflows/ (CI)")
+
+    # Build OCTOPUS.md content
+    lines: list[str] = []
+    lines.append("# OCTOPUS.md")
+    lines.append("")
+    lines.append("This file provides guidance to Octopus Agent when working in this repository.")
+    lines.append("")
+
+    # Project overview
+    lines.append("## Project Overview")
+    lines.append("")
+    lines.append(f"- **Type**: {project_type}")
+    if languages:
+        lines.append(f"- **Languages**: {', '.join(languages)}")
+    lines.append(f"- **Root**: `{workspace}`")
+    lines.append("")
+
+    # Build / Test / Lint
+    if build_commands or test_commands or lint_commands:
+        lines.append("## Common Commands")
+        lines.append("")
+        if build_commands:
+            lines.append("**Build:**")
+            for cmd in build_commands:
+                lines.append(f"```bash\n{cmd}\n```")
+            lines.append("")
+        if test_commands:
+            lines.append("**Test:**")
+            for cmd in test_commands:
+                lines.append(f"```bash\n{cmd}\n```")
+            lines.append("")
+        if lint_commands:
+            lines.append("**Lint:**")
+            for cmd in lint_commands:
+                lines.append(f"```bash\n{cmd}\n```")
+            lines.append("")
+
+    # Directory structure
+    if dir_entries:
+        lines.append("## Directory Structure")
+        lines.append("")
+        lines.append("```")
+        lines.extend(dir_entries[:40])  # Cap at 40 entries
+        lines.append("```")
+        lines.append("")
+
+    # Conventions
+    if conventions:
+        lines.append("## Conventions")
+        lines.append("")
+        for conv in conventions:
+            lines.append(f"- `{conv}`")
+        lines.append("")
+
+    # Write the file
+    octopus_md = workspace / "OCTOPUS.md"
+    if octopus_md.exists():
+        print_warning(f"OCTOPUS.md already exists at {octopus_md}")
+        print_info("To regenerate, delete the existing file first.")
+        return
+
+    octopus_md.write_text("\n".join(lines))
+    print_success(f"Generated {octopus_md}")
+    print_info(f"  {project_type} project with {len(dir_entries)} top-level entries")
+
+    # Add the init prompt as a user message to trigger the LLM to refine
+    init_prompt = (
+        "I just generated an initial OCTOPUS.md for this project. "
+        "Please review it and suggest improvements. The file is at the project root."
+    )
+    conversation.add_message(Message(role=Role.USER, content=init_prompt))
+    print_info("Added init review prompt to conversation.")
+
+
+# ---------------------------------------------------------------------------
+# /add-dir handler
+# ---------------------------------------------------------------------------
+
+
+def _handle_add_dir_command(
+    args: str, additional_dirs: list[Path]
+) -> None:
+    """Add a directory to the session's working directories."""
+    if not args.strip():
+        print_error("Usage: /add-dir <path>")
+        print_info("Example: /add-dir ../other-project")
+        return
+
+    target = Path(args.strip()).resolve()
+
+    if not target.exists():
+        print_error(f"Directory does not exist: {target}")
+        return
+
+    if not target.is_dir():
+        print_error(f"Not a directory: {target}")
+        return
+
+    if target in additional_dirs:
+        print_warning(f"Directory already added: {target}")
+        return
+
+    additional_dirs.append(target)
+    os.environ["OCTOPUS_WORKSPACE"] = str(target)
+    print_success(f"Added working directory: {target}")
+    print_info(f"  Total additional directories: {len(additional_dirs)}")
+
+
+# ---------------------------------------------------------------------------
+# /branch handler
+# ---------------------------------------------------------------------------
+
+
+async def _handle_branch_command(
+    conversation: ConversationContext,
+    kernel: Any,
+    ctx: Any,
+) -> ConversationContext:
+    """Save current conversation state and start a new branch.
+
+    Clones the current ConversationContext with a new session_id,
+    saves both, and returns the new context.
+    """
+    # Save current conversation
+    await conversation.save(kernel.state)
+
+    # Clone with new session_id
+    new_ctx = ConversationContext(
+        session_id=str(uuid.uuid4()),
+        system_prompt=conversation.system_prompt,
+        model=conversation.model,
+        max_tokens=conversation.max_tokens,
+        messages=copy.deepcopy(conversation.messages),
+    )
+
+    # Create the new session in the state manager
+    await kernel.state.create_session(
+        new_ctx.session_id,
+        workspace=str(ctx.workspace) if ctx.workspace else None,
+    )
+    await new_ctx.save(kernel.state)
+
+    print_success(f"Branched to new session: {new_ctx.session_id[:8]}")
+    print_info(f"  Previous session: {conversation.session_id[:8]}")
+    print_info(f"  Messages carried over: {len(new_ctx.messages)}")
+
+    return new_ctx
+
+
+# ---------------------------------------------------------------------------
+# /btw handler
+# ---------------------------------------------------------------------------
+
+
+async def _handle_btw_command(
+    args: str,
+    conversation: ConversationContext,
+    provider: Any,
+    kernel: Any,
+    ctx: Any,
+) -> None:
+    """Ask a side question without interrupting the main conversation.
+
+    Sends a separate query to the LLM with a minimal context (just the
+    question), displays the answer, and does NOT add it to the main
+    conversation history.
+    """
+    question = args.strip()
+    if not question:
+        print_error("Usage: /btw <your question>")
+        return
+
+    from octopus.loop.models import Role as R
+    from octopus.loop.models import StreamEventType
+
+    console.print()
+    console.print(f"[warning]/btw[/] [dim]{question}[/]")
+    console.print()
+
+    # Build a minimal conversation for the side question
+    side_ctx = ConversationContext(
+        session_id=str(uuid.uuid4()),
+        system_prompt=(
+            "You are a helpful assistant answering a quick side question. "
+            "Be concise. Answer in 1-3 sentences unless more detail is needed."
+        ),
+        model=conversation.model,
+    )
+    side_ctx.ensure_system_message()
+    side_ctx.add_message(Message(role=R.USER, content=question))
+
+    collected: list[str] = []
+
+    try:
+        async for event in provider.stream(
+            side_ctx.messages,
+            [],
+            conversation.model,
+            max_tokens=1024,
+        ):
+            if event.type == StreamEventType.TEXT:
+                collected.append(event.text or "")
+            elif event.type == StreamEventType.ERROR:
+                print_error(event.error or "Unknown error")
+                return
+    except Exception as e:
+        print_error(f"Side question failed: {e}")
+        return
+
+    if collected:
+        answer = "".join(collected).strip()
+        console.print()
+        print_assistant_markdown(answer)
+        console.print()
+        print_info("(Not added to main conversation)")
+    else:
+        print_warning("No response received.")
+
+
+# ---------------------------------------------------------------------------
+# /cd handler
+# ---------------------------------------------------------------------------
+
+
+def _handle_cd_command(args: str, kernel: Any) -> None:
+    """Change the working directory."""
+    if not args.strip():
+        # Go to home directory
+        target = Path.home()
+    else:
+        target = Path(args.strip()).expanduser()
+
+    if not target.exists():
+        print_error(f"Directory does not exist: {target}")
+        return
+
+    if not target.is_dir():
+        print_error(f"Not a directory: {target}")
+        return
+
+    target = target.resolve()
+    try:
+        os.chdir(target)
+    except PermissionError:
+        print_error(f"Permission denied: {target}")
+        return
+
+    # Update kernel workspace
+    kernel.workspace = target
+    print_success(f"Changed directory to: {target}")
+
+
+# ---------------------------------------------------------------------------
+# /clear handler
+# ---------------------------------------------------------------------------
+
+
+async def _handle_clear_command(
+    conversation: ConversationContext,
+    kernel: Any,
+    ctx: Any,
+    model: str | None,
+) -> ConversationContext:
+    """Save current conversation and start a new session."""
+    # Save current conversation before clearing
+    await conversation.save(kernel.state)
+    print_info(f"Previous session saved: {conversation.session_id[:8]}")
+
+    # Create a new conversation context
+    new_session_id = str(uuid.uuid4())
+    new_conversation = ConversationContext(
+        session_id=new_session_id,
+        system_prompt=SYSTEM_PROMPT,
+        model=_resolve_model(model),
+    )
+    new_conversation.ensure_system_message()
+
+    # Create new session in state manager
+    await kernel.state.create_session(
+        new_session_id,
+        workspace=str(ctx.workspace) if ctx.workspace else None,
+    )
+    await new_conversation.save(kernel.state)
+
+    console.clear()
+    print_success(f"New session started: {new_session_id[:8]}")
+
+    return new_conversation
+
+
+# ---------------------------------------------------------------------------
+# /color handler
+# ---------------------------------------------------------------------------
+
+
+def _handle_color_command(
+    args: str, current_index: int
+) -> tuple[int, Any]:
+    """Change the prompt bar color.
+
+    Usage:
+        /color          — cycle to next color
+        /color blue     — set specific color
+        /color list     — show available colors
+        /color default  — reset to default (blue)
+
+    Returns (new_color_index, new_prompt_style).
+    """
+    from prompt_toolkit.styles import Style
+
+    if args.strip() == "list":
+        console.print("[accent]Available colors:[/]")
+        for i, preset in enumerate(COLOR_PRESETS):
+            marker = " <-- current" if i == current_index else ""
+            console.print(f"  [{preset['style']}]{preset['name']}[/] - {preset['label']}{marker}")
+        return current_index, Style.from_dict({"prompt": COLOR_PRESETS[current_index]["style"]})
+
+    if args.strip() in ("default", "reset"):
+        return 0, Style.from_dict({"prompt": COLOR_PRESETS[0]["style"]})
+
+    # Try to find by name
+    if args.strip():
+        target = args.strip().lower()
+        for i, preset in enumerate(COLOR_PRESETS):
+            if preset["name"] == target:
+                console.print(f"[{preset['style']}]Color set to: {preset['name']}[/]")
+                return i, Style.from_dict({"prompt": preset["style"]})
+        print_error(f"Unknown color: {args.strip()}")
+        _names = ", ".join(p["name"] for p in COLOR_PRESETS)
+        print_info(f"Available: {_names}, default")
+        return current_index, Style.from_dict({"prompt": COLOR_PRESETS[current_index]["style"]})
+
+    # Cycle to next color
+    new_index = (current_index + 1) % len(COLOR_PRESETS)
+    preset = COLOR_PRESETS[new_index]
+    console.print(f"[{preset['style']}]Color: {preset['name']}[/]")
+    return new_index, Style.from_dict({"prompt": preset["style"]})
+
+
+# ---------------------------------------------------------------------------
+# /compact handler
+# ---------------------------------------------------------------------------
+
+
+async def _handle_compact_command(
+    conversation: ConversationContext,
+    compaction: Any,
+    kernel: Any,
+) -> None:
+    """Force conversation compaction using the CompactionEngine."""
+    tokens_before = conversation.estimate_tokens()
+    print_info(f"Context before compaction: {tokens_before:,} tokens")
+
+    result = compaction.auto_compact(conversation)
+
+    if not result.compacted:
+        print_info("Conversation is within limits, no compaction needed.")
+        return
+
+    tokens_after = conversation.estimate_tokens()
+    print_success(
+        f"Compacted: {tokens_before:,} -> {tokens_after:,} tokens "
+        f"({result.strategy.value if result.strategy else 'unknown'})"
+    )
+
+    # Persist the compacted conversation
+    await conversation.save(kernel.state)
+
+
+# ---------------------------------------------------------------------------
+# /context handler
+# ---------------------------------------------------------------------------
+
+
+def _handle_context_command(
+    conversation: ConversationContext,
+    compaction: Any,
+) -> None:
+    """Show context usage as a colored grid.
+
+    Breaks down token usage by category: system prompt, messages, tool results.
+    """
+    messages = conversation.messages
+
+    system_tokens = 0
+    message_tokens = 0
+    tool_tokens = 0
+
+    for msg in messages:
+        content_len = len(msg.content) if msg.content else 0
+        tc_len = 0
+        if msg.tool_calls:
+            for tc in msg.tool_calls:
+                tc_len += len(tc.name) + len(tc.arguments)
+
+        # Estimate tokens for this message
+        msg_tokens = (content_len + tc_len) // 4  # ~4 chars per token
+
+        if msg.role.value == "system":
+            system_tokens += msg_tokens
+        elif msg.role.value == "tool":
+            tool_tokens += msg_tokens
+        else:
+            message_tokens += msg_tokens
+
+    total_tokens = system_tokens + message_tokens + tool_tokens
+
+    print_context_grid(
+        system_tokens=system_tokens,
+        message_tokens=message_tokens,
+        tool_tokens=tool_tokens,
+        total_tokens=total_tokens,
+        max_context=compaction.auto_compact_threshold,
+    )
 
 
 async def session_resume_async(

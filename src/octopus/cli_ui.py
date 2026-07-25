@@ -221,18 +221,39 @@ def select_option(
 # Available slash commands with descriptions
 SLASH_COMMANDS: list[dict[str, str]] = [
     {"name": "/help", "description": "Show available commands"},
-    {"name": "/model", "description": "Fetch and select model from provider"},
+    {"name": "/init", "description": "Generate OCTOPUS.md with project docs"},
+    {"name": "/add-dir", "description": "Add a working directory to the session"},
+    {"name": "/background", "description": "Background task info"},
+    {"name": "/branch", "description": "Save state and start new branch"},
+    {"name": "/btw", "description": "Ask a side question"},
+    {"name": "/cd", "description": "Change working directory"},
+    {"name": "/clear", "description": "Clear conversation, start new session"},
+    {"name": "/color", "description": "Change prompt bar color"},
+    {"name": "/compact", "description": "Force conversation compaction"},
     {"name": "/config", "description": "Show or edit configuration"},
     {"name": "/config show", "description": "Show current configuration"},
     {"name": "/config set model", "description": "Set model name"},
     {"name": "/config set provider", "description": "Set provider name"},
     {"name": "/config set base_url", "description": "Set provider base URL"},
     {"name": "/config set api_key", "description": "Set API key"},
+    {"name": "/context", "description": "Show context usage as a colored grid"},
+    {"name": "/model", "description": "Fetch and select model from provider"},
     {"name": "/tokens", "description": "Show estimated token count"},
-    {"name": "/compact", "description": "Force conversation compaction"},
     {"name": "/reset", "description": "Reset conversation history"},
-    {"name": "/clear", "description": "Clear screen"},
     {"name": "/exit", "description": "Exit interactive mode"},
+]
+
+
+# Color presets for the prompt bar (cycled by /color)
+COLOR_PRESETS: list[dict[str, str]] = [
+    {"name": "blue", "style": "bold #00afff", "label": "Blue (default)"},
+    {"name": "green", "style": "bold #00d75f", "label": "Green"},
+    {"name": "purple", "style": "bold #af5fff", "label": "Purple"},
+    {"name": "orange", "style": "bold #ff8700", "label": "Orange"},
+    {"name": "red", "style": "bold #ff5555", "label": "Red"},
+    {"name": "cyan", "style": "bold #00d7d7", "label": "Cyan"},
+    {"name": "white", "style": "bold #ffffff", "label": "White"},
+    {"name": "gray", "style": "bold #808080", "label": "Gray"},
 ]
 
 
@@ -680,12 +701,20 @@ def print_help() -> None:
 | Command | Description |
 |---------|-------------|
 | `/help` | Show this help |
-| `/clear` | Clear screen |
-| `/reset` | Reset conversation |
-| `/tokens` | Show token estimate |
-| `/compact` | Force compaction |
-| `/model` | Fetch & select model from provider |
+| `/init` | Generate OCTOPUS.md with project docs |
+| `/add-dir <path>` | Add a working directory to the session |
+| `/background` | Info about background mode (not available in CLI) |
+| `/branch` | Save state and start a new conversation branch |
+| `/btw <question>` | Ask a side question without interrupting main flow |
+| `/cd <path>` | Change working directory |
+| `/clear` | Clear conversation and start a new session |
+| `/color <name/cycle>` | Change prompt bar color |
+| `/compact` | Force conversation compaction |
 | `/config` | Show/edit configuration |
+| `/context` | Show context usage as a colored grid |
+| `/model` | Fetch & select model from provider |
+| `/tokens` | Show token estimate |
+| `/reset` | Reset conversation |
 | `/exit` | Exit |
 
 ### Config
@@ -702,10 +731,138 @@ def print_help() -> None:
 
 | Key | Action |
 |-----|--------|
+| `Shift+Tab` | Cycle permission mode |
 | `Ctrl+C` | Cancel / Exit |
 | `Ctrl+D` | Exit |
 """
     console.print(Markdown(help_text))
+
+
+# ---------------------------------------------------------------------------
+# Context Grid Visualization
+# ---------------------------------------------------------------------------
+
+
+def print_context_grid(
+    *,
+    system_tokens: int,
+    message_tokens: int,
+    tool_tokens: int,
+    total_tokens: int,
+    max_context: int = 128_000,
+) -> None:
+    """Display context usage as a colored grid.
+
+    Renders a visual bar showing how much of the context window is used,
+    broken down by category (system, messages, tools).
+    """
+    from rich.table import Table
+
+    # Calculate percentages
+    usage_pct = min(total_tokens / max_context, 1.0) if max_context > 0 else 0.0
+    system_pct = system_tokens / max_context if max_context > 0 else 0
+    message_pct = message_tokens / max_context if max_context > 0 else 0
+    tool_pct = tool_tokens / max_context if max_context > 0 else 0
+
+    # Build the bar
+    bar_width = 50
+    filled = int(usage_pct * bar_width)
+    system_end = int(system_pct * bar_width)
+    message_end = system_end + int(message_pct * bar_width)
+    tool_end = message_end + int(tool_pct * bar_width)
+
+    bar_chars: list[str] = []
+    for i in range(bar_width):
+        if i >= filled:
+            bar_chars.append("[dim]#[/]")
+        elif i < system_end:
+            bar_chars.append("[cyan]#[/]")
+        elif i < message_end:
+            bar_chars.append("[green]#[/]")
+        elif i < tool_end:
+            bar_chars.append("[yellow]#[/]")
+        else:
+            bar_chars.append("[dim]#[/]")
+
+    bar = "".join(bar_chars)
+
+    # Color the percentage based on usage
+    if usage_pct < 0.5:
+        pct_style = "green"
+    elif usage_pct < 0.8:
+        pct_style = "yellow"
+    else:
+        pct_style = "red"
+
+    console.print()
+    console.print(f"[accent]Context Usage[/] [{pct_style}]{usage_pct:.0%}[/]")
+    console.print(f"  [{bar}]")
+    console.print()
+
+    # Breakdown table
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_column("Category", style="dim")
+    table.add_column("Tokens", justify="right")
+    table.add_column("Percent", justify="right")
+    table.add_column("Bar", min_width=20)
+
+    def _make_mini_bar(pct: float, color: str) -> str:
+        w = 20
+        f = int(pct * w)
+        return f"[{color}]" + "#" * f + "[/][dim]" + "." * (w - f) + "[/]"
+
+    table.add_row(
+        "System prompt",
+        f"{system_tokens:,}",
+        f"{system_pct:.1%}",
+        _make_mini_bar(system_pct, "cyan"),
+    )
+    table.add_row(
+        "Messages",
+        f"{message_tokens:,}",
+        f"{message_pct:.1%}",
+        _make_mini_bar(message_pct, "green"),
+    )
+    table.add_row(
+        "Tool results",
+        f"{tool_tokens:,}",
+        f"{tool_pct:.1%}",
+        _make_mini_bar(tool_pct, "yellow"),
+    )
+    table.add_row(
+        "Total",
+        f"{total_tokens:,}",
+        f"{usage_pct:.1%}",
+        "",
+    )
+    table.add_row(
+        "Remaining",
+        f"{max_context - total_tokens:,}",
+        f"{1 - usage_pct:.1%}",
+        "",
+    )
+
+    console.print(table)
+    console.print()
+
+
+# ---------------------------------------------------------------------------
+# Background / btw Helpers
+# ---------------------------------------------------------------------------
+
+
+def print_background_message() -> None:
+    """Print message explaining that background mode is not feasible in CLI."""
+    console.print()
+    console.print("[warning]Background mode is not available in the CLI.[/]")
+    console.print()
+    console.print("[dim]The Octopus CLI runs in the foreground as an interactive session.[/]")
+    console.print("[dim]To run tasks in the background, consider:[/]")
+    console.print()
+    console.print("  [info]1.[/] Use the Octopus Desktop GUI (Tauri app) for background tasks")
+    console.print("  [info]2.[/] Run `octopus cli \"your prompt\"` for one-shot non-interactive mode")
+    console.print("  [info]3.[/] Use shell job control: [dim]octopus cli \"task\" &[/]")
+    console.print()
 
 
 # ---------------------------------------------------------------------------
