@@ -37,6 +37,9 @@ class LiteLLMProvider:
         """Stream the model response via litellm."""
         import litellm
 
+        # Drop unsupported params automatically (e.g., tools for some providers)
+        litellm.drop_params = True
+
         # Convert messages to litellm format
         litellm_messages = [m.to_dict() for m in messages]
 
