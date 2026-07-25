@@ -353,7 +353,7 @@ def print_help() -> None:
 | `/tokens` | Show token estimate |
 | `/cost` | Show session cost |
 | `/compact` | Force compaction |
-| `/model` | Show/set model |
+| `/model` | Fetch & select model from provider |
 | `/config` | Show/edit configuration |
 | `/exit` | Exit |
 

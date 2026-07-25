@@ -416,7 +416,7 @@ def _handle_slash_command(
         return False
 
     if cmd == "/model":
-        console.print(f"[model]Current model: {conversation.model}[/]")
+        _handle_model_command(conversation)
         return False
 
     if cmd == "/config":
@@ -429,6 +429,130 @@ def _handle_slash_command(
 
     print_error(f"Unknown command: {command}")
     return False
+
+
+def _handle_model_command(conversation: ConversationContext) -> None:
+    """Handle /model — fetch models from provider and list for selection.
+
+    GET /v1/models from the configured provider base_url.
+    """
+    import httpx
+
+    config = load_config()
+    provider = config.provider_config
+
+    if not provider or not provider.base_url:
+        print_warning("No provider configured. Set base_url first:")
+        print_info("  /config set provider <name>")
+        print_info("  /config set base_url <url>")
+        return
+
+    # Build models endpoint URL
+    base_url = provider.base_url.rstrip("/")
+    models_url = f"{base_url}/models"
+
+    # Prepare auth headers
+    auth = load_auth()
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    if auth.openai_api_key:
+        headers["Authorization"] = f"Bearer {auth.openai_api_key}"
+
+    # Fetch models
+    print_info(f"Fetching models from {models_url} ...")
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.get(models_url, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPStatusError as e:
+        print_error(f"HTTP {e.response.status_code}: {e.response.text[:200]}")
+        return
+    except Exception as e:
+        print_error(f"Failed to fetch models: {e}")
+        return
+
+    # Parse model list — handle both {"data": [...]} and plain [...]
+    models: list[dict[str, str]] = []
+    if isinstance(data, dict) and "data" in data:
+        raw_list = data["data"]
+    elif isinstance(data, list):
+        raw_list = data
+    else:
+        print_error("Unexpected response format")
+        return
+
+    for item in raw_list:
+        if isinstance(item, dict) and "id" in item:
+            models.append({"id": item["id"], "owned_by": item.get("owned_by", "")})
+
+    if not models:
+        print_warning("No models found.")
+        return
+
+    # Sort by id
+    models.sort(key=lambda m: m["id"])
+
+    # Display models
+    from rich.table import Table
+
+    table = Table(title=f"Available Models ({provider.name or config.model_provider})")
+    table.add_column("#", style="dim", width=4)
+    table.add_column("Model", style="info")
+    table.add_column("Owner", style="dim")
+
+    current_model = config.model
+    for i, m in enumerate(models, 1):
+        marker = " *" if m["id"] == current_model else ""
+        table.add_row(str(i), f"{m['id']}{marker}", m.get("owned_by", ""))
+
+    console.print(table)
+    console.print()
+
+    if current_model:
+        console.print(f"[dim]Current: {current_model} (* = selected)[/]")
+    console.print()
+
+    # Prompt for selection
+    from prompt_toolkit import PromptSession
+
+    pt_session: PromptSession[str] = PromptSession()
+    try:
+        selection = pt_session.prompt_sync(
+            "Select model (number or name, Enter to cancel): ",
+        )
+    except (EOFError, KeyboardInterrupt):
+        return
+
+    selection = selection.strip()
+    if not selection:
+        return
+
+    # Resolve selection
+    selected_model: str | None = None
+    if selection.isdigit():
+        idx = int(selection) - 1
+        if 0 <= idx < len(models):
+            selected_model = models[idx]["id"]
+        else:
+            print_error(f"Invalid number: {selection}")
+            return
+    else:
+        # Match by name (exact or prefix)
+        matches = [m for m in models if m["id"] == selection or m["id"].startswith(selection)]
+        if len(matches) == 1:
+            selected_model = matches[0]["id"]
+        elif len(matches) > 1:
+            print_warning(f"Ambiguous: {', '.join(m['id'] for m in matches[:5])}")
+            return
+        else:
+            # Use as-is (user typed exact model name)
+            selected_model = selection
+
+    # Save to config
+    config.model = selected_model
+    save_config(config)
+    conversation.model = selected_model
+    print_success(f"Model set to: {selected_model}")
 
 
 def _handle_config_command(command: str) -> None:
