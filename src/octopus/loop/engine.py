@@ -481,6 +481,9 @@ def _is_shell_command(text: str) -> bool:
         "which ",
         "apt ",
         "brew ",
+        "exec ",
+        "bash ",
+        "sh ",
     ]
     first_line = lines[0].strip()
     return any(first_line.startswith(p) for p in prefixes)
