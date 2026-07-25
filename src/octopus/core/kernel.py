@@ -120,6 +120,9 @@ class Kernel:
         # Tool registry (populated externally)
         self._tools: dict[str, Tool] = {}
 
+        # Permission prompt callback — set by CLI to prompt user
+        self._permission_prompt: Any = None
+
         self._initialized = False
 
     # ---- lifecycle --------------------------------------------------------
@@ -227,8 +230,22 @@ class Kernel:
             perm_result.requires_approval
             and ctx.permission_mode == PermissionMode.DEFAULT
         ):
-            # In CLI mode this would prompt the user; for now auto-approve
-            pass
+            # Prompt user for approval if callback is set
+            if self._permission_prompt is not None:
+                approved = await self._permission_prompt(
+                    tool_call.tool_name,
+                    tool_call.arguments,
+                    perm_result.reason or "Approval required",
+                )
+                if not approved:
+                    duration = time.monotonic() - start_time
+                    await self._log_audit(tool_call, ctx, None, duration, "USER_DENIED")
+                    return ToolResult(
+                        success=False,
+                        output=None,
+                        error="Permission denied by user",
+                    )
+            # If no prompt callback, auto-approve (for non-interactive mode)
 
         # ---- Step 3: Sandbox validation ----
         if tool_call.tool_name in ("write_file", "edit_file", "shell"):

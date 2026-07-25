@@ -146,6 +146,7 @@ async def _setup_runtime(
     model: str | None = None,
     permission_mode: str = "default",
     workspace: Path | None = None,
+    permission_prompt: Any = None,
 ) -> tuple[Kernel, ToolRegistry, LiteLLMProvider, Context]:
     """Set up kernel, registry, provider, and context."""
     ws = workspace or Path.cwd()
@@ -153,6 +154,8 @@ async def _setup_runtime(
     pm = _resolve_permission_mode(permission_mode)
 
     kernel = Kernel(db_path=db_path, workspace=ws, permission_mode=pm)
+    if permission_prompt is not None:
+        kernel._permission_prompt = permission_prompt
     await kernel.initialize()
 
     registry = ToolRegistry()
@@ -296,9 +299,37 @@ async def run_interactive_async(
     If resume_session is provided, loads that session's conversation history.
     Otherwise starts a new session.
     """
+
+    async def _permission_prompt(tool_name: str, args: dict, reason: str) -> bool:
+        """Prompt user for tool execution approval."""
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.formatted_text import HTML
+
+        # Show what the tool wants to do
+        if tool_name == "shell":
+            cmd = args.get("command", "")
+            console.print(f"\n[yellow]Permission required:[/yellow] {reason}")
+            console.print(f"[dim]Command: {cmd}[/dim]")
+        elif tool_name in ("write_file", "edit_file"):
+            path = args.get("path", "")
+            console.print(f"\n[yellow]Permission required:[/yellow] {reason}")
+            console.print(f"[dim]File: {path}[/dim]")
+        else:
+            console.print(f"\n[yellow]Permission required:[/yellow] {reason}")
+
+        pt = PromptSession()
+        try:
+            response = await pt.prompt_async(
+                HTML("<prompt>Allow? (y/n): </prompt>"),
+            )
+            return response.strip().lower() in ("y", "yes", "")
+        except (EOFError, KeyboardInterrupt):
+            return False
+
     kernel, registry, provider, ctx = await _setup_runtime(
         model=model,
         permission_mode=permission_mode,
+        permission_prompt=_permission_prompt,
     )
 
     compaction = CompactionEngine()
