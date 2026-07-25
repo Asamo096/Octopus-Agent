@@ -289,10 +289,27 @@ async def run_interactive_async(
         # prompt_toolkit session for styled input with proper cursor positioning
         from prompt_toolkit import PromptSession
         from prompt_toolkit.formatted_text import HTML
+        from prompt_toolkit.key_binding import KeyBindings
         from prompt_toolkit.styles import Style
 
         prompt_style = Style.from_dict({"prompt": "bold #00afff"})
-        pt_session: PromptSession[str] = PromptSession()
+
+        # Permission mode cycling with shift+tab
+        _MODE_CYCLE = ["default", "accept_edits", "full_auto", "plan"]
+        _current_mode_index = _MODE_CYCLE.index(permission_mode) if permission_mode in _MODE_CYCLE else 0
+
+        kb = KeyBindings()
+
+        @kb.add("s-tab")  # Shift+Tab
+        def _cycle_mode(event: object) -> None:
+            """Cycle through permission modes: default -> accept_edits -> full_auto -> plan."""
+            nonlocal _current_mode_index, permission_mode
+            _current_mode_index = (_current_mode_index + 1) % len(_MODE_CYCLE)
+            permission_mode = _MODE_CYCLE[_current_mode_index]
+            # Redraw the prompt with updated status bar
+            print_status_bar(permission_mode)
+
+        pt_session: PromptSession[str] = PromptSession(key_bindings=kb)
 
         # Session cost tracking
         session_cost = 0.0
