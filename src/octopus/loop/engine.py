@@ -288,13 +288,10 @@ def _parse_xml_tool_calls(text: str) -> list[ToolCallDelta]:
 
     # Format 2: <function=name>...</function>
     pattern2 = r"<function=(.*?)>(.*?)</function>"
-    for block in re.findall(pattern2, text, re.DOTALL):
-        func_match = re.search(r"<function=(.*?)>", block, re.DOTALL)
-        if not func_match:
-            continue
-        tool_name = func_match.group(1).strip()
+    for func_name, body in re.findall(pattern2, text, re.DOTALL):
+        tool_name = func_name.strip()
         params: dict[str, str] = {}
-        for pm in re.finditer(r"<parameter=(\w+)>(.*?)</parameter>", block, re.DOTALL):
+        for pm in re.finditer(r"<parameter=(\w+)>(.*?)</parameter>", body, re.DOTALL):
             params[pm.group(1)] = pm.group(2).strip()
         if "command" in params:
             args_str = json.dumps({"command": params["command"]})
