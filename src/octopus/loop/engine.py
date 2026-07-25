@@ -110,10 +110,23 @@ async def run_query(
                 elif event.type == StreamEventType.DONE:
                     break
 
+            # Strip thinking blocks from output (some models leak internal reasoning)
+            if collected_tool_calls:
+                import re
+                full_text = "".join(collected_text)
+                cleaned = re.sub(r"<thinking>.*?</thinking>", "", full_text, flags=re.DOTALL).strip()
+                if cleaned != full_text.strip():
+                    collected_text.clear()
+                    if cleaned:
+                        collected_text.append(cleaned)
+
             # If no tool calls from provider, try parsing XML tool calls
             # (some providers/models output XML instead of function calling)
             if not collected_tool_calls:
+                import re
                 full_text = "".join(collected_text)
+                # Strip thinking blocks
+                full_text = re.sub(r"<thinking>.*?</thinking>", "", full_text, flags=re.DOTALL).strip()
                 xml_calls = _parse_xml_tool_calls(full_text)
                 if xml_calls:
                     collected_tool_calls = xml_calls
