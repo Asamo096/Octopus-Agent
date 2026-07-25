@@ -237,108 +237,28 @@ SLASH_COMMANDS: list[dict[str, str]] = [
 ]
 
 
-def slash_autocomplete() -> str | None:
-    """Show slash command autocomplete with arrow key navigation.
+class SlashCommandCompleter:
+    """Prompt-toolkit completer for slash commands."""
 
-    Returns the selected command string, or None if cancelled.
-    """
-    from prompt_toolkit.buffer import Buffer
-    from prompt_toolkit.key_binding import KeyBindings
+    def __init__(self) -> None:
+        self.commands = SLASH_COMMANDS
 
-    # Filter commands based on input
-    selected_index = 0
-    result: str | None = None
-    filter_buffer = Buffer()
+    def get_completions(self, document: object, complete_event: object) -> list:
+        """Return completions for the current input."""
+        from prompt_toolkit.completion import Completion
 
-    def _get_filtered_commands() -> list[dict[str, str]]:
-        filter_text = filter_buffer.text
-        if not filter_text:
-            return SLASH_COMMANDS
-        return [
-            cmd for cmd in SLASH_COMMANDS
-            if cmd["name"].startswith(filter_text)
-               or filter_text in cmd["description"].lower()
-        ]
-
-    kb = KeyBindings()
-
-    @kb.add("up")
-    def _move_up(event: object) -> None:
-        nonlocal selected_index
-        filtered = _get_filtered_commands()
-        if filtered:
-            selected_index = (selected_index - 1) % len(filtered)
-
-    @kb.add("down")
-    def _move_down(event: object) -> None:
-        nonlocal selected_index
-        filtered = _get_filtered_commands()
-        if filtered:
-            selected_index = (selected_index + 1) % len(filtered)
-
-    @kb.add("enter")
-    def _confirm(event: object) -> None:
-        nonlocal result
-        filtered = _get_filtered_commands()
-        if filtered and 0 <= selected_index < len(filtered):
-            result = filtered[selected_index]["name"]
-        event.app.exit(result=result)  # type: ignore
-
-    @kb.add("escape")
-    @kb.add("c-c")
-    def _cancel(event: object) -> None:
-        event.app.exit(result=None)  # type: ignore
-
-    # Reset selection when buffer changes
-    def _on_buffer_changed(event: object) -> None:
-        nonlocal selected_index
-        selected_index = 0
-
-    filter_buffer.on_text_changed += _on_buffer_changed
-
-    # Build the menu display
-    def _build_menu_text() -> str:
-        filtered = _get_filtered_commands()
-        filter_text = filter_buffer.text
-        lines = ["", "  Commands:"]
-        if filter_text:
-            lines[0] = f"  Filter: {filter_text}"
-        for i, cmd in enumerate(filtered):
-            if i == selected_index:
-                lines.append(f"  > {cmd['name']:<25} {cmd['description']}")
-            else:
-                lines.append(f"    {cmd['name']:<25} {cmd['description']}")
-        lines.append("")
-        lines.append("  [up/down] Navigate  [enter] Confirm  [esc] Cancel  [type] Filter")
-        return "\n".join(lines)
-
-    # Use Application for proper terminal handling
-    from prompt_toolkit.application import Application
-    from prompt_toolkit.layout import Layout
-    from prompt_toolkit.layout.containers import HSplit, Window
-    from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
-
-    class MenuControl(FormattedTextControl):
-        def __init__(self) -> None:
-            super().__init__(self._get_text)
-
-        def _get_text(self) -> str:
-            return _build_menu_text()
-
-    layout = Layout(HSplit([
-        Window(content=MenuControl()),
-        Window(content=BufferControl(buffer=filter_buffer)),
-    ]))
-
-    app: Application = Application(
-        layout=layout,
-        key_bindings=kb,
-        full_screen=False,
-        erase_when_done=True,
-    )
-
-    app.run()
-    return result
+        text = document.text  # type: ignore
+        completions = []
+        for cmd in self.commands:
+            if cmd["name"].startswith(text) or text in cmd["description"].lower():
+                completions.append(
+                    Completion(
+                        cmd["name"],
+                        start_position=-len(text),
+                        display_meta=cmd["description"],
+                    )
+                )
+        return completions
 
 
 # ---------------------------------------------------------------------------

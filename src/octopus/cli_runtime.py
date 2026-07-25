@@ -409,24 +409,22 @@ async def run_interactive_async(
             nonlocal _interrupt_requested
             _interrupt_requested = True
 
-        @kb.add("tab")  # Tab
-        def _slash_autocomplete(event: object) -> None:
-            """Trigger slash command autocomplete when input starts with /."""
-            from octopus.cli_ui import slash_autocomplete
+        # Set up slash command completer
+        from prompt_toolkit.completion import WordCompleter
 
-            # Get current buffer text
-            buffer = event.app.current_buffer  # type: ignore
-            current_text = buffer.text
+        from octopus.cli_ui import SLASH_COMMANDS
 
-            if current_text.startswith("/"):
-                # Show autocomplete
-                selected = slash_autocomplete()
-                if selected:
-                    # Replace buffer with selected command
-                    buffer.text = selected
-                    buffer.cursor_position = len(selected)
+        slash_completer = WordCompleter(
+            [cmd["name"] for cmd in SLASH_COMMANDS],
+            meta_dict={cmd["name"]: cmd["description"] for cmd in SLASH_COMMANDS},
+            ignore_case=True,
+        )
 
-        pt_session: PromptSession[str] = PromptSession(key_bindings=kb)
+        pt_session: PromptSession[str] = PromptSession(
+            key_bindings=kb,
+            completer=slash_completer,
+            complete_while_typing=True,
+        )
 
         # Session cost tracking
         session_cost = 0.0
