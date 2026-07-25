@@ -18,6 +18,22 @@ app = typer.Typer(
 console = Console()
 
 
+def display_banner() -> None:
+    """Display the Octopus Agent ASCII banner."""
+    banner = (
+        "[bold cyan]"
+        " ██████   ██████ ████████  ██████  ██████  ██    ██ ███████ \n"
+        "██    ██ ██         ██    ██    ██ ██   ██ ██    ██ ██      \n"
+        "██    ██ ██         ██    ██    ██ ██████  ██    ██ ███████ \n"
+        "██    ██ ██         ██    ██    ██ ██      ██    ██      ██ \n"
+        " ██████   ██████    ██     ██████  ██       ██████  ███████ \n"
+        "[/]"
+    )
+    console.print(banner)
+    console.print(f"  [dim]v{__version__} — Harness-governed AI assistant[/]")
+    console.print()
+
+
 def _run_async(coro: object) -> None:
     """Run an async function from sync context."""
     asyncio.run(coro)  # type: ignore[arg-type]
@@ -64,6 +80,7 @@ def cli(
     from octopus.cli_runtime import run_interactive_async, run_single_prompt_async
 
     if prompt:
+        display_banner()
         console.print(
             Panel(f"[bold]Prompt:[/] {prompt}", title="🐙 Octopus", border_style="blue")
         )
@@ -73,11 +90,12 @@ def cli(
             )
         )
     else:
+        display_banner()
         console.print(
             Panel(
-                "[bold green]Octopus Interactive Mode[/]\n"
+                "[bold green]Interactive Mode[/]\n"
                 "Type your message and press Enter.\n"
-                "Commands: [cyan]/help[/] [cyan]/clear[/] [cyan]/reset[/] [cyan]/exit[/]",
+                "Commands: [cyan]/help[/] [cyan]/clear[/] [cyan]/reset[/] [cyan]/tokens[/] [cyan]/exit[/]",
                 title="🐙 Octopus",
                 border_style="blue",
             )
