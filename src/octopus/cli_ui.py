@@ -365,7 +365,7 @@ def print_help() -> None:
 | `/config set model <m>` | Set model name |
 | `/config set provider <p>` | Set provider name |
 | `/config set base_url <u>` | Set provider base URL |
-| `/config set key <key>` | Set OPENAI_API_KEY |
+| `/config set api_key <key>` | Set OPENAI_API_KEY |
 
 ### Shortcuts
 

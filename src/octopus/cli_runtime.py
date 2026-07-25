@@ -445,6 +445,7 @@ def _handle_model_command(conversation: ConversationContext) -> None:
         print_warning("No provider configured. Set base_url first:")
         print_info("  /config set provider <name>")
         print_info("  /config set base_url <url>")
+        print_info("  /config set api_key <key>")
         return
 
     # Build models endpoint URL
@@ -559,11 +560,11 @@ def _handle_config_command(command: str) -> None:
     """Handle /config subcommands.
 
     Usage:
-        /config show           — show current config
-        /config set model <m>  — set model name
-        /config set provider <p> — set provider name
-        /config set base_url <url> — set provider base URL
-        /config set key <key>  — set OPENAI_API_KEY (stored in auth.json)
+        /config show              — show current config
+        /config set model <m>     — set model name
+        /config set provider <p>  — set provider name
+        /config set base_url <u>  — set provider base URL
+        /config set api_key <key> — set OPENAI_API_KEY (stored in auth.json)
     """
     parts = command.split(maxsplit=3)
     config = load_config()
@@ -618,7 +619,7 @@ def _handle_config_command(command: str) -> None:
             save_config(config)
             print_success(f"Base URL set to: {value}")
 
-        elif key == "key":
+        elif key in ("key", "api_key"):
             auth.keys["OPENAI_API_KEY"] = value
             save_auth(auth)
             print_success("API key saved to auth.json")
@@ -634,7 +635,7 @@ def _handle_config_command(command: str) -> None:
     console.print("  /config set model <m>     — set model name")
     console.print("  /config set provider <p>  — set provider name")
     console.print("  /config set base_url <u>  — set provider base URL")
-    console.print("  /config set key <key>     — set OPENAI_API_KEY")
+    console.print("  /config set api_key <key> — set OPENAI_API_KEY")
 
 
 async def session_resume_async(
