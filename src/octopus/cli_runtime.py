@@ -24,6 +24,7 @@ from octopus.cli_ui import (
     print_prompt_arrow,
     print_separator,
     print_status,
+    print_status_bar,
     print_status_line,
     print_stream_newline,
     print_success,
@@ -300,6 +301,9 @@ async def run_interactive_async(
         session_tool_calls = 0
 
         while True:
+            # Show status bar before prompt
+            print_status_bar(permission_mode)
+
             print_separator()
             try:
                 user_input = await pt_session.prompt_async(

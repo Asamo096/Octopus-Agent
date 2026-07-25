@@ -411,3 +411,52 @@ class ThinkingSpinner:
     def __exit__(self, *args: object) -> None:
         # Clear the thinking line
         console.print(f"\r{' ' * (len(self.message) + 10)}\r", end="", highlight=False)
+
+
+# ---------------------------------------------------------------------------
+# Status Bar (bottom of terminal)
+# ---------------------------------------------------------------------------
+
+_MODE_DISPLAY = {
+    "default": {
+        "icon": "⏸",
+        "label": "manual mode",
+        "color": "yellow",
+        "hint": "esc to interrupt",
+    },
+    "plan": {
+        "icon": "⏸",
+        "label": "plan mode",
+        "color": "blue",
+        "hint": "shift+tab to cycle · esc to interrupt",
+    },
+    "full_auto": {
+        "icon": "⏵⏵",
+        "label": "auto mode on",
+        "color": "green",
+        "hint": "shift+tab to cycle · esc to interrupt",
+    },
+    "accept_edits": {
+        "icon": "⏵⏵",
+        "label": "accept edits on",
+        "color": "cyan",
+        "hint": "shift+tab to cycle",
+    },
+}
+
+
+def print_status_bar(permission_mode: str = "default") -> None:
+    """Print the bottom status bar showing current mode and shortcuts.
+
+    Format (claude-code style):
+        ⏸ manual mode on · esc to interrupt · ← for agents
+        ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← for agents
+    """
+    mode_info = _MODE_DISPLAY.get(permission_mode, _MODE_DISPLAY["default"])
+    icon = mode_info["icon"]
+    label = mode_info["label"]
+    color = mode_info["color"]
+    hint = mode_info["hint"]
+
+    # Print status bar
+    console.print(f"\n[{color}]{icon}[/{color}] [{color}]{label}[/{color}] [dim]· {hint} · ← for agents[/dim]", highlight=False)
