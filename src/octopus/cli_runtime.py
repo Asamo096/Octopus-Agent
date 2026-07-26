@@ -350,6 +350,46 @@ def _display_loaded_messages(conversation: ConversationContext) -> None:
     console.print()
 
 
+def _check_workspace_trust(workspace: str) -> str:
+    """Check trust level for a workspace directory."""
+    from octopus.core.trust import check_trust
+
+    return check_trust(workspace)
+
+
+def _prompt_workspace_trust(workspace: str) -> None:
+    """Prompt user whether to trust an unfamiliar workspace.
+
+    Trusted workspaces run with normal permissions.
+    Untrusted workspaces run in manual mode (all actions require approval).
+    """
+    from octopus.core.trust import mark_trusted
+
+    console.print()
+    console.print(f"[warning]⚠[/] [yellow]This workspace is new:[/] [dim]{workspace}[/]")
+    console.print()
+    console.print("  [bold]Do you trust this workspace?[/]")
+    console.print()
+    console.print("  [green]y[/] = trust (normal permissions)")
+    console.print("  [yellow]n[/] = don't trust (manual mode, all actions require approval)")
+    console.print("  [red]x[/] = exit")
+    console.print()
+
+    try:
+        choice = input("  Choose [y/n/x]: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        choice = "x"
+
+    if choice in ("y", "yes", ""):
+        mark_trusted(workspace)
+        print_success(f"Trusted: {workspace}")
+    elif choice in ("n", "no"):
+        print_info("Running in untrusted mode. All actions will require approval.")
+    else:
+        print_info("Exiting. You can trust this workspace with: /trust")
+        raise SystemExit(0)
+
+
 async def run_interactive_async(
     *,
     model: str | None = None,
@@ -395,6 +435,16 @@ async def run_interactive_async(
     )
 
     compaction = CompactionEngine()
+
+    # Workspace trust check — prompt user when entering unfamiliar directory
+    ws = str(ctx.workspace) if ctx.workspace else ""
+    if not resume_session and ws:
+        trust_level = _check_workspace_trust(ws)
+        if trust_level == "untrusted":
+            _prompt_workspace_trust(ws)
+        elif trust_level == "dangerous":
+            print_error(f"Running in {ws} is not allowed for safety reasons.")
+            return
 
     try:
         # Load or create conversation context
