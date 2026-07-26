@@ -33,6 +33,7 @@ class SandboxSettings(BaseModel):
     """Filesystem sandbox settings."""
 
     enabled: bool = True
+    backend: Literal["local", "cube"] = "local"
     allowed_paths: list[str] = Field(default_factory=lambda: ["~/*", "/tmp/*"])
     sensitive_paths: list[str] = Field(
         default_factory=lambda: [
@@ -45,6 +46,12 @@ class SandboxSettings(BaseModel):
             "**/id_ed25519*",
         ]
     )
+    # CubeSandbox settings
+    cube_api_url: str = "http://127.0.0.1:3000"
+    cube_template_id: str = ""
+    cube_api_key: str = ""
+    cube_auto_pause_timeout: int = 300
+    cube_allow_internet: bool = True
 
 
 class GUISettings(BaseModel):

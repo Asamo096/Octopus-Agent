@@ -3,19 +3,33 @@
 Uses Tencent Cloud's CubeSandbox for KVM-level isolation with
 sub-60ms cold start and <5MB memory overhead.
 
-Requires: pip install cubesandbox
+The CubeSandbox SDK is synchronous, so this adapter bridges to
+the async kernel via asyncio.to_thread().
+
+Requires: pip install cubesandbox (installed from ~/CubeSandbox/sdk/python/)
 Server: https://github.com/TencentCloud/CubeSandbox
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 import time
-from typing import Any
-
-from octopus.sandbox.adapter import SandboxResult
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SandboxResult:
+    """Result of a sandbox operation."""
+
+    success: bool
+    output: str | None = None
+    error: str | None = None
+    exit_code: int = 0
+    duration: float = 0.0
 
 
 class CubeBackend:
@@ -24,9 +38,12 @@ class CubeBackend:
     Each sandbox runs in its own Linux kernel inside a KVM MicroVM.
     Provides stronger isolation than Docker (shared kernel namespaces).
 
-    Configuration via environment variables:
+    The backend wraps the synchronous CubeSandbox SDK and exposes
+    async methods for the Octopus kernel via asyncio.to_thread().
+
+    Configuration via environment variables or constructor args:
     - CUBE_API_URL: CubeAPI management plane (default: http://127.0.0.1:3000)
-    - CUBE_TEMPLATE_ID: Template ID for sandbox creation
+    - CUBE_TEMPLATE_ID: Template ID for sandbox creation (required)
     - CUBE_API_KEY: Optional API key
     """
 
@@ -41,77 +58,72 @@ class CubeBackend:
         auto_pause_timeout: int = 300,
         allow_internet: bool = True,
     ) -> None:
-        self._api_url = api_url
-        self._template_id = template_id
-        self._api_key = api_key
-        self._auto_pause_timeout = auto_pause_timeout
-        self._allow_internet = allow_internet
-        self._sandbox: Any = None
-        self._session_id: str | None = None
-
-    def _get_config(self) -> Any:
-        """Build CubeSandbox Config from settings."""
-        try:
-            from cubesandbox import Config  # type: ignore[import-not-found]
-        except ImportError as err:
-            raise ImportError(
-                "cubesandbox package not installed. "
-                "Install with: pip install cubesandbox"
-            ) from err
-
-        import os
-
-        api_url = self._api_url or os.environ.get(
+        self._api_url = api_url or os.environ.get(
             "CUBE_API_URL", "http://127.0.0.1:3000"
         )
-        api_key = self._api_key or os.environ.get("CUBE_API_KEY")
+        self._template_id = template_id or os.environ.get("CUBE_TEMPLATE_ID", "")
+        self._api_key = api_key or os.environ.get("CUBE_API_KEY")
+        self._auto_pause_timeout = auto_pause_timeout
+        self._allow_internet = allow_internet
+        self._sandbox: object | None = None
+        self._session_id: str | None = None
+        self._created = False
 
-        return Config(api_url=api_url, api_key=api_key)
+    # ---- lifecycle ----------------------------------------------------------
 
     async def create(self, workspace: str | None = None) -> str:
         """Create a CubeSandbox MicroVM.
 
-        Args:
-            workspace: Host path to mount as /workspace
+        Uses asyncio.to_thread() because the CubeSandbox SDK is synchronous.
+        The Sandbox.create() call blocks until the VM is ready.
 
-        Returns:
-            Sandbox ID
+        Returns the sandbox ID.
         """
-        try:
-            from cubesandbox import Sandbox
-        except ImportError as err:
-            raise ImportError(
-                "cubesandbox package not installed. "
-                "Install with: pip install cubesandbox"
-            ) from err
+        if self._created and self._sandbox is not None:
+            return self._session_id or ""
 
-        import os
-
-        template_id = self._template_id or os.environ.get("CUBE_TEMPLATE_ID")
-        if not template_id:
+        if not self._template_id:
             raise ValueError(
-                "CUBE_TEMPLATE_ID must be set (env var or config). "
-                "Create a template via the CubeSandbox console."
+                "CUBE_TEMPLATE_ID must be set. Create a template via the "
+                "CubeSandbox console and set it in config or env."
             )
 
-        config = self._get_config()
+        def _create() -> object:
+            from cubesandbox import Config, Sandbox
 
-        # Build volume mounts if workspace specified
-        volume_mounts = {}
-        if workspace:
-            volume_mounts = {"/workspace": workspace}
+            cfg = Config(
+                api_url=self._api_url,
+                api_key=self._api_key,
+                template_id=self._template_id,
+            )
 
-        self._sandbox = Sandbox.create(
-            template=template_id,
-            timeout=self._auto_pause_timeout,
-            config=config,
-            allow_internet_access=self._allow_internet,
-            volume_mounts=volume_mounts if volume_mounts else None,
-        )
+            volume_mounts = None
+            if workspace:
+                volume_mounts = {"/workspace": workspace}
 
-        self._session_id = self._sandbox.sandbox_id
-        logger.info("CubeSandbox created: %s", self._session_id)
-        return self._session_id
+            sb = Sandbox.create(
+                template=self._template_id,
+                timeout=self._auto_pause_timeout,
+                allow_internet_access=self._allow_internet,
+                volume_mounts=volume_mounts,
+                config=cfg,
+            )
+            return sb
+
+        try:
+            self._sandbox = await asyncio.to_thread(_create)
+            self._session_id = getattr(self._sandbox, "sandbox_id", None)
+            self._created = True
+            logger.info("CubeSandbox created: %s", self._session_id)
+            return self._session_id or ""
+        except ImportError:
+            raise ImportError(
+                "cubesandbox package not installed. "
+                "Install with: pip install -e ~/CubeSandbox/sdk/python/"
+            )
+        except Exception as exc:
+            logger.error("CubeSandbox creation failed: %s", exc)
+            raise
 
     async def execute_command(
         self,
@@ -120,72 +132,115 @@ class CubeBackend:
         cwd: str | None = None,
         timeout: float = 30.0,
     ) -> SandboxResult:
-        """Execute a shell command in the CubeSandbox MicroVM."""
+        """Execute a shell command inside the CubeSandbox MicroVM.
+
+        Uses sb.commands.run() which connects via envd's Connect protocol.
+        """
         if self._sandbox is None:
-            return SandboxResult(success=False, error="Sandbox not created")
+            return SandboxResult(
+                success=False, error="Sandbox not created. Call create() first."
+            )
 
         start = time.monotonic()
-        try:
-            result = self._sandbox.commands.run(
-                command,
-                cwd=cwd or "/workspace",
-                timeout=int(timeout),
-            )
-            duration = time.monotonic() - start
 
+        def _run() -> object:
+            sb = self._sandbox
+            result = sb.commands.run(  # type: ignore[union-attr]
+                command,
+                timeout=timeout,
+                cwd=cwd or "/workspace",
+            )
+            return result
+
+        try:
+            cmd_result = await asyncio.to_thread(_run)
+            duration = time.monotonic() - start
             return SandboxResult(
-                success=result.exit_code == 0,
-                output=result.stdout if hasattr(result, "stdout") else str(result),
-                error=result.stderr
-                if hasattr(result, "stderr") and result.exit_code != 0
-                else None,
-                exit_code=result.exit_code if hasattr(result, "exit_code") else 0,
+                success=cmd_result.exit_code == 0,  # type: ignore[union-attr]
+                output=cmd_result.stdout,  # type: ignore[union-attr]
+                error=(
+                    cmd_result.stderr  # type: ignore[union-attr]
+                    if cmd_result.exit_code != 0  # type: ignore[union-attr]
+                    else None
+                ),
+                exit_code=cmd_result.exit_code,  # type: ignore[union-attr]
                 duration=duration,
             )
-        except Exception as e:
+        except Exception as exc:
             return SandboxResult(
                 success=False,
-                error=str(e),
+                error=str(exc),
                 exit_code=-1,
                 duration=time.monotonic() - start,
             )
 
     async def read_file(self, path: str) -> str:
-        """Read a file from the CubeSandbox."""
+        """Read a file from inside the CubeSandbox."""
         if self._sandbox is None:
             raise RuntimeError("Sandbox not created")
-        content: str = self._sandbox.files.read(path)
-        return content
+
+        def _read() -> str:
+            sb = self._sandbox
+            return sb.files.read(path)  # type: ignore[union-attr]
+
+        return await asyncio.to_thread(_read)
 
     async def write_file(self, path: str, content: str) -> None:
-        """Write a file to the CubeSandbox."""
+        """Write a file inside the CubeSandbox."""
         if self._sandbox is None:
             raise RuntimeError("Sandbox not created")
-        self._sandbox.files.write(path, content)
+
+        def _write() -> None:
+            sb = self._sandbox
+            sb.files.write(path, content)  # type: ignore[union-attr]
+
+        await asyncio.to_thread(_write)
 
     async def create_snapshot(self, name: str) -> str:
-        """Create a snapshot of the CubeSandbox state."""
+        """Create a snapshot of the CubeSandbox state.
+
+        Snapshots capture the full filesystem and memory state.
+        They persist independently of the sandbox lifecycle.
+        """
         if self._sandbox is None:
             raise RuntimeError("Sandbox not created")
-        snapshot = self._sandbox.create_snapshot(name)
-        return (
-            snapshot.snapshot_id if hasattr(snapshot, "snapshot_id") else str(snapshot)
-        )
+
+        def _snap() -> object:
+            sb = self._sandbox
+            return sb.create_snapshot(name)  # type: ignore[union-attr]
+
+        snapshot = await asyncio.to_thread(_snap)
+        return getattr(snapshot, "snapshot_id", str(snapshot))
 
     async def restore_snapshot(self, snapshot_id: str) -> None:
-        """Restore the CubeSandbox to a snapshot."""
+        """Restore the CubeSandbox to a previous snapshot.
+
+        Reverts filesystem and memory state. The VM restarts with a
+        new kernel after rollback.
+        """
         if self._sandbox is None:
             raise RuntimeError("Sandbox not created")
-        self._sandbox.rollback(snapshot_id)
+
+        def _rollback() -> None:
+            sb = self._sandbox
+            sb.rollback(snapshot_id)  # type: ignore[union-attr]
+
+        await asyncio.to_thread(_rollback)
 
     async def destroy(self) -> None:
         """Destroy the CubeSandbox MicroVM."""
         if self._sandbox is not None:
+
+            def _kill() -> None:
+                sb = self._sandbox
+                sb.kill()  # type: ignore[union-attr]
+
             try:
-                self._sandbox.kill()
+                await asyncio.to_thread(_kill)
                 logger.info("CubeSandbox destroyed: %s", self._session_id)
-            except Exception as e:
-                logger.warning("Failed to destroy sandbox: %s", e)
+            except Exception as exc:
+                logger.warning("Failed to destroy sandbox: %s", exc)
             finally:
                 self._sandbox = None
                 self._session_id = None
+                self._created = False
