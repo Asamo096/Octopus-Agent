@@ -219,14 +219,17 @@ def select_option(
         erase_when_done=True,
     )
 
-    # Detect if running inside an existing event loop
+    # Run the application — handle both sync and async contexts
     import asyncio
     try:
         loop = asyncio.get_running_loop()
-        # Inside event loop — use run_async
-        loop.run_until_complete(app.run_async())
+        # Inside running event loop — delegate to new thread
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(1) as pool:
+            future = pool.submit(app.run)
+            future.result()
     except RuntimeError:
-        # No event loop — use sync run
+        # No running event loop — sync run
         app.run()
 
     return result
