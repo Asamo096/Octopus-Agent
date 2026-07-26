@@ -219,8 +219,15 @@ def select_option(
         erase_when_done=True,
     )
 
-    # Run the application
-    app.run()
+    # Detect if running inside an existing event loop
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+        # Inside event loop — use run_async
+        loop.run_until_complete(app.run_async())
+    except RuntimeError:
+        # No event loop — use sync run
+        app.run()
 
     return result
 
