@@ -18,6 +18,7 @@ class ReadFileTool:
 
     name = "read_file"
     description = "Read the contents of a file at the given path."
+    is_read_only = True
     input_schema: dict[str, Any] = {
         "type": "object",
         "properties": {
@@ -72,6 +73,7 @@ class WriteFileTool:
     description = (
         "Write content to a file. Creates parent directories if they don't exist."
     )
+    is_destructive = True
     input_schema: dict[str, Any] = {
         "type": "object",
         "properties": {
@@ -105,6 +107,7 @@ class EditFileTool:
 
     name = "edit_file"
     description = "Replace text in a file. Uses exact string matching — old_string must appear exactly once."
+    is_destructive = True
     input_schema: dict[str, Any] = {
         "type": "object",
         "properties": {
@@ -142,7 +145,15 @@ class EditFileTool:
                 )
             new_text = text.replace(old_string, new_string, 1)
             path.write_text(new_text, encoding="utf-8")
-            return ToolResult(success=True, output=f"Replaced 1 occurrence in {path}")
+            return ToolResult(
+                success=True,
+                output=f"Replaced 1 occurrence in {path}",
+                metadata={
+                    "old_string": old_string,
+                    "new_string": new_string,
+                    "file_path": str(path),
+                },
+            )
         except Exception as e:
             return ToolResult(success=False, output=None, error=str(e))
 
@@ -157,6 +168,7 @@ class GlobTool:
 
     name = "glob"
     description = "Find files matching a glob pattern (e.g. '**/*.py', 'src/**/*.ts')."
+    is_read_only = True
     input_schema: dict[str, Any] = {
         "type": "object",
         "properties": {
@@ -200,6 +212,7 @@ class GrepTool:
 
     name = "grep"
     description = "Search for a regex pattern in files under a directory. Returns matching lines with file paths and line numbers."
+    is_read_only = True
     input_schema: dict[str, Any] = {
         "type": "object",
         "properties": {

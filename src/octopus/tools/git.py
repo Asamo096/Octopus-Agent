@@ -16,6 +16,7 @@ class GitTool:
         "Execute git commands. Supported actions: status, diff, log, add, commit, "
         "checkout, branch, restore, show."
     )
+    is_destructive = True
     input_schema: dict[str, Any] = {
         "type": "object",
         "properties": {

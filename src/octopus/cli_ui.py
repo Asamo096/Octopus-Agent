@@ -56,9 +56,18 @@ def display_banner(
     model: str = "claude-sonnet-4-20250514",
     workspace: str | None = None,
     session_id: str | None = None,
+    session_title: str | None = None,
     permission_mode: str = "default",
 ) -> None:
-    """Display the Octopus startup banner with ASCII art logo."""
+    """Display the Octopus startup banner with ASCII art logo.
+
+    Args:
+        model: Model name to display (shortened automatically).
+        workspace: Current working directory.
+        session_id: Unique session identifier.
+        session_title: Human-readable session title (generated from first message).
+        permission_mode: Active permission mode label.
+    """
     logo = [
         " ██████╗  ██████╗████████╗ ██████╗ ██████╗ ██╗   ██╗███████╗",
         "██╔═══██╗██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗██║   ██║██╔════╝",
@@ -84,8 +93,10 @@ def display_banner(
     if workspace:
         console.print(f"PATH: [dim]{workspace}[/]")
 
-    # SESSION
-    if session_id:
+    # SESSION — show title if available, otherwise ID
+    if session_title:
+        console.print(f"SESSION: [dim]{session_title}[/]")
+    elif session_id:
         console.print(f"SESSION: [dim]{session_id}[/]")
 
     console.print()
@@ -352,6 +363,7 @@ def print_tool_call_result(
     is_error: bool = False,
     tool_name: str | None = None,
     args: str | None = None,
+    tool_data: dict[str, object] | None = None,
 ) -> None:
     """Print tool call result with per-tool-type rendering.
 
@@ -380,16 +392,26 @@ def print_tool_call_result(
         )
         # Render output with per-tool-type styling
         if result and result.strip():
-            _render_tool_output(tool_name or tc.name, result, args or tc.arguments)
+            _render_tool_output(
+                tool_name or tc.name,
+                result,
+                args or tc.arguments,
+                tool_data=tool_data,
+            )
 
 
-def _render_tool_output(tool_name: str, output: str, args: str | None = None) -> None:
+def _render_tool_output(
+    tool_name: str,
+    output: str,
+    args: str | None = None,
+    tool_data: dict[str, object] | None = None,
+) -> None:
     """Render tool output with per-tool-type styling.
 
     - bash/shell: dim panel with command as title
     - read/file_read: syntax-highlighted if extension recognized
     - grep/search: cyan panel
-    - edit/file_edit: green panel
+    - edit/file_edit: green panel, diff preview if old/new content available
     - default: dim text, truncated to 15 lines
     """
     name_lower = tool_name.lower()
@@ -412,9 +434,12 @@ def _render_tool_output(tool_name: str, output: str, args: str | None = None) ->
         except (ValueError, TypeError):
             pass
 
+    # Also check tool_data for file_path
+    if not file_path and tool_data:
+        file_path = str(tool_data.get("file_path", ""))
+
     # bash / shell commands
     if name_lower in ("shell", "bash", "execute_command", "run_command"):
-        # Show command as title if available
         cmd_title = None
         if args:
             try:
@@ -438,7 +463,7 @@ def _render_tool_output(tool_name: str, output: str, args: str | None = None) ->
         )
 
     # read / file_read
-    elif name_lower in ("read", "file_read", "read_file"):
+    elif name_lower in ("read", "read_file", "file_read"):
         if file_path:
             ext = file_path.rsplit(".", 1)[-1].lower() if "." in file_path else ""
             if ext in (
@@ -500,22 +525,45 @@ def _render_tool_output(tool_name: str, output: str, args: str | None = None) ->
     elif name_lower in ("grep", "search", "search_files", "find_files"):
         truncated = _truncate(output, max_lines)
         console.print(
-            Panel(truncated, title=tool_name, border_style="cyan", expand=False),
+            Panel(truncated, title="Search results", border_style="cyan", expand=False),
             highlight=False,
         )
 
-    # edit / file_edit
-    elif name_lower in ("edit", "file_edit", "edit_file"):
+    # write_file
+    elif name_lower in ("write", "write_file", "file_write"):
         truncated = _truncate(output, max_lines)
         console.print(
             Panel(
                 truncated,
-                title=file_path or "edit",
+                title=file_path or "write",
                 border_style="green",
                 expand=False,
             ),
             highlight=False,
         )
+
+    # edit / file_edit — try to show diff if metadata has old/new strings
+    elif name_lower in ("edit", "edit_file", "file_edit"):
+        old_content = None
+        new_content = None
+        if tool_data:
+            old_content = str(tool_data.get("old_string", ""))
+            new_content = str(tool_data.get("new_string", ""))
+            file_path = str(tool_data.get("file_path", file_path or ""))
+
+        if old_content and new_content and file_path:
+            render_diff(old_content, new_content, file_path)
+        else:
+            truncated = _truncate(output, max_lines)
+            console.print(
+                Panel(
+                    truncated,
+                    title=file_path or "edit",
+                    border_style="green",
+                    expand=False,
+                ),
+                highlight=False,
+            )
 
     # default: dim text with truncation
     else:
@@ -856,35 +904,256 @@ def print_background_message() -> None:
     console.print()
     console.print("[warning]Background mode is not available in the CLI.[/]")
     console.print()
-    console.print("[dim]The Octopus CLI runs in the foreground as an interactive session.[/]")
+    console.print(
+        "[dim]The Octopus CLI runs in the foreground as an interactive session.[/]"
+    )
     console.print("[dim]To run tasks in the background, consider:[/]")
     console.print()
-    console.print("  [info]1.[/] Use the Octopus Desktop GUI (Tauri app) for background tasks")
-    console.print("  [info]2.[/] Run `octopus cli \"your prompt\"` for one-shot non-interactive mode")
-    console.print("  [info]3.[/] Use shell job control: [dim]octopus cli \"task\" &[/]")
+    console.print(
+        "  [info]1.[/] Use the Octopus Desktop GUI (Tauri app) for background tasks"
+    )
+    console.print(
+        '  [info]2.[/] Run `octopus cli "your prompt"` for one-shot non-interactive mode'
+    )
+    console.print('  [info]3.[/] Use shell job control: [dim]octopus cli "task" &[/]')
     console.print()
 
 
 # ---------------------------------------------------------------------------
-# Spinner (simple text-based)
+# Spinner with animated frames and activity description
 # ---------------------------------------------------------------------------
 
 
 class ThinkingSpinner:
-    """Simple thinking indicator for processing states."""
+    """Animated spinner with activity description for processing states.
+
+    Usage:
+        spinner = ThinkingSpinner("Thinking")
+        with spinner as s:
+            s.update_activity("Reading src/main.py")
+            # ... do work, calling s.tick() periodically ...
+    """
+
+    _FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
     def __init__(self, message: str = "Thinking") -> None:
         self.message = message
         self._start_time = 0.0
+        self._current_activity: str | None = None
+        self._frame_index = 0
+
+    def update_activity(self, activity: str) -> None:
+        """Update the activity description (e.g., 'Reading src/main.py')."""
+        self._current_activity = activity
+        self._frame_index = 0
+
+    def tick(self) -> None:
+        """Advance spinner frame and redraw."""
+        frame = self._FRAMES[self._frame_index % len(self._FRAMES)]
+        self._frame_index += 1
+        desc = self._current_activity or self.message
+        # Truncate to fit terminal width
+        max_desc = console.width - 4 if console.width else 60
+        if len(desc) > max_desc:
+            desc = desc[:max_desc - 3] + "..."
+        console.print(
+            f"\r{frame} [dim]{desc}[/]", end="", highlight=False
+        )
 
     def __enter__(self) -> ThinkingSpinner:
         self._start_time = time.monotonic()
-        console.print(f"[dim]{self.message}...[/]", end="", highlight=False)
+        self.tick()
         return self
 
     def __exit__(self, *args: object) -> None:
-        # Clear the thinking line
-        console.print(f"\r{' ' * (len(self.message) + 10)}\r", end="", highlight=False)
+        # Clear spinner line
+        console.print("\r" + " " * (console.width or 80) + "\r", end="", highlight=False)
+
+
+# ---------------------------------------------------------------------------
+# Diff preview for file edits
+# ---------------------------------------------------------------------------
+
+
+def render_diff(
+    old_text: str,
+    new_text: str,
+    file_path: str,
+    *,
+    max_lines: int = 30,
+) -> None:
+    """Render a colored diff between old and new text.
+
+    Args:
+        old_text: Original file content before edit.
+        new_text: New file content after edit.
+        file_path: Path of the file being edited (for display).
+        max_lines: Maximum number of diff lines to show.
+    """
+    import difflib
+
+    if not old_text or not new_text:
+        return
+
+    # Use difflib. Differ for a cleaner line-by-line view
+    d = difflib.Differ()
+    old_lines = old_text.splitlines(keepends=True)
+    new_lines = new_text.splitlines(keepends=True)
+
+    # Calculate differences
+    diff_lines = list(d.compare(
+        [line.rstrip("\n") for line in old_lines],
+        [line.rstrip("\n") for line in new_lines],
+    ))
+
+    if not diff_lines:
+        return
+
+    # Limit to max_lines with a buffer around changes
+    changed_lines: list[int] = []
+    for i, line in enumerate(diff_lines):
+        if line.startswith(("+ ", "- ", "? ")):
+            changed_lines.append(i)
+
+    # If no changes detected, show nothing
+    if not changed_lines:
+        return
+
+    # Create a windowed view around changes (show context + changes)
+    context_padding = 3
+    to_show: set[int] = set()
+    for idx in changed_lines:
+        start = max(0, idx - context_padding)
+        end = min(len(diff_lines), idx + context_padding + 1)
+        to_show.update(range(start, end))
+
+    console.print(f"[bold]Diff: {file_path}[/]")
+    shown = 0
+    last_shown = -2
+    for i in sorted(to_show):
+        if shown >= max_lines:
+            break
+        # Print separator when skipping lines
+        if i > last_shown + 1 and last_shown >= 0:
+            console.print(f"[dim]  ... ({i - last_shown - 1} lines skipped)[/]")
+        line = diff_lines[i]
+        if line.startswith("+ "):
+            console.print(f"[green]{line}[/]")
+        elif line.startswith("- "):
+            console.print(f"[red]{line}[/]")
+        elif line.startswith("? "):
+            console.print(f"[yellow]{line}[/]")
+        elif line.startswith("  "):
+            console.print(f"[dim]{line}[/]")
+        else:
+            console.print(f"[cyan]{line}[/]")
+        shown += 1
+        last_shown = i
+
+    if shown >= max_lines and len(to_show) > max_lines:
+        console.print(f"[dim]  ... (diff truncated, {len(to_show) - shown} more changes)[/]")
+
+
+# ---------------------------------------------------------------------------
+# Compact summary display
+# ---------------------------------------------------------------------------
+
+
+def print_compact_summary(
+    messages_before: int,
+    messages_after: int,
+    tokens_before: int,
+    tokens_after: int,
+    strategy: str,
+    preserved_context: str | None = None,
+) -> None:
+    """Display compact summary after conversation compaction.
+
+    Shows what was saved and which strategy was applied.
+    """
+    saved = tokens_before - tokens_after
+    pct = int((saved / tokens_before) * 100) if tokens_before > 0 else 0
+
+    console.print()
+    console.print("[accent]Conversation compacted[/]")
+    console.print(f"  Messages: {messages_before} -> {messages_after}")
+    console.print(
+        f"  Tokens: {_format_token_count(tokens_before)} -> "
+        f"{_format_token_count(tokens_after)} ({pct}% saved)"
+    )
+    console.print(f"  Strategy: {strategy}")
+
+    if preserved_context:
+        console.print(f'  Context: "{preserved_context}"')
+    console.print()
+
+
+# ---------------------------------------------------------------------------
+# Session title generation
+# ---------------------------------------------------------------------------
+
+
+def generate_session_title(first_message: str, max_len: int = 50) -> str:
+    """Generate a session title from the first user message.
+
+    Strips markdown formatting, takes the first line, and truncates.
+    """
+    # Take first line, strip markdown formatting
+    title = first_message.split("\n")[0].strip()
+    # Remove common markdown characters
+    title = title.replace("*", "").replace("_", "").replace("`", "").replace("#", "")
+    # Remove leading/trailing whitespace from stripped markdown
+    title = title.strip()
+    # Truncate
+    if len(title) > max_len:
+        title = title[:max_len - 3] + "..."
+    return title or "New session"
+
+
+# ---------------------------------------------------------------------------
+# Tool use summary (collapsed)
+# ---------------------------------------------------------------------------
+
+
+def print_tool_summary(tool_calls: list[ToolCallDisplay]) -> None:
+    """Print a collapsed summary of multiple tool calls.
+
+    Groups by tool name: "3 tool uses (2 read, 1 grep)"
+    """
+    if len(tool_calls) <= 1:
+        return
+
+    # Group by tool name
+    counts: dict[str, int] = {}
+    for tc in tool_calls:
+        counts[tc.name] = counts.get(tc.name, 0) + 1
+
+    # Format: "3 tool uses (2 read, 1 grep)"
+    total = len(tool_calls)
+    parts = [f"{count} {name}" for name, count in sorted(counts.items())]
+    summary = f"{total} tool uses ({', '.join(parts)})"
+
+    console.print(f"[dim]{summary}[/dim]")
+
+
+# ---------------------------------------------------------------------------
+# Effort / thinking indicator
+# ---------------------------------------------------------------------------
+
+
+def print_effort_indicator(effort: str) -> None:
+    """Display the thinking effort level when configured.
+
+    Shows: [thinking: high] with color-coded effort level.
+    """
+    effort_colors = {
+        "low": "dim",
+        "medium": "yellow",
+        "high": "cyan",
+        "max": "magenta",
+    }
+    color = effort_colors.get(effort, "dim")
+    console.print(f"[{color}][thinking: {effort}][/{color}]", end=" ")
 
 
 # ---------------------------------------------------------------------------

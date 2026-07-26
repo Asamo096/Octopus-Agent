@@ -70,6 +70,7 @@ class StreamEventType(StrEnum):
     ERROR = "error"  # An error occurred
     DONE = "done"  # Stream finished
     STATUS = "status"  # Status message (compaction, etc.)
+    ACTIVITY = "activity"  # Tool activity description for spinner
 
 
 @dataclass
@@ -81,6 +82,7 @@ class StreamEvent:
     tool_call: ToolCallDelta | None = None
     usage: dict[str, int] | None = None
     error: str | None = None
+    tool_data: dict[str, object] | None = None  # Extra tool result metadata for UI rendering
 
 
 # ---------------------------------------------------------------------------

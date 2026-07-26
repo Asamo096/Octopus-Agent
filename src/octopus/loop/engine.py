@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from octopus.core.kernel import Context, Kernel, ToolCall, ToolResult
 from octopus.loop.compaction import CompactionEngine
 from octopus.loop.context import ConversationContext
+from octopus.loop.cost import CostTracker, TokenUsage
 from octopus.loop.models import (
     Message,
     Role,
@@ -62,12 +63,14 @@ class LoopBudget:
     max_turns: int | None = None
     max_tool_calls: int | None = None
     max_input_tokens: int | None = None
+    max_cost_usd: float | None = None
 
     def check(
         self,
         turn_count: int,
         tool_call_count: int,
         total_input_tokens: int = 0,
+        cost_tracker: CostTracker | None = None,
     ) -> BudgetViolation | None:
         """Check if any budget constraint is violated.
 
@@ -100,6 +103,18 @@ class LoopBudget:
                 limit=self.max_input_tokens,
             )
 
+        if (
+            self.max_cost_usd is not None
+            and cost_tracker is not None
+            and cost_tracker.get_total_cost() >= self.max_cost_usd
+        ):
+            return BudgetViolation(
+                type="max_cost_usd",
+                message=f"Reached maximum cost (${self.max_cost_usd:.4f})",
+                current=cost_tracker.get_total_cost(),
+                limit=self.max_cost_usd,
+            )
+
         return None
 
 
@@ -116,6 +131,7 @@ async def run_query(
     conversation: ConversationContext | None = None,
     compaction: CompactionEngine | None = None,
     budget: LoopBudget | None = None,
+    cost_tracker: CostTracker | None = None,
 ) -> AsyncIterator[StreamEvent]:
     """Run the agent loop.
 
@@ -134,6 +150,8 @@ async def run_query(
     turns = 0
     tool_call_count = 0
     total_input_tokens = 0
+    turn_input_tokens = 0
+    turn_output_tokens = 0
 
     # Sync messages into conversation context if provided
     if conversation is not None:
@@ -149,7 +167,9 @@ async def run_query(
 
         # Budget enforcement check before each turn
         if budget is not None:
-            violation = budget.check(turns, tool_call_count, total_input_tokens)
+            violation = budget.check(
+                turns, tool_call_count, total_input_tokens, cost_tracker
+            )
             if violation is not None:
                 logger.warning(
                     "Budget violation: %s (%s)",
@@ -177,6 +197,18 @@ async def run_query(
                     type=StreamEventType.STATUS,
                     text=f"[Compacted: {result.tokens_before} → {result.tokens_after} tokens via {result.strategy}]",
                 )
+                # Yield compaction metadata for compact summary display
+                yield StreamEvent(
+                    type=StreamEventType.STATUS,
+                    text="",
+                    usage={
+                        "compaction_messages_before": result.original_count,
+                        "compaction_messages_after": len(result.compacted_messages) if result.compacted_messages else result.original_count,
+                        "compaction_tokens_before": result.tokens_before,
+                        "compaction_tokens_after": result.tokens_after,
+                        "compaction_strategy": str(result.strategy) if result.strategy else "",
+                    },
+                )
 
         # Sanitize messages: remove orphaned tool_use/tool_result blocks
         messages[:] = _sanitize_messages(messages)
@@ -197,6 +229,9 @@ async def run_query(
                 elif event.type == StreamEventType.USAGE:
                     if event.usage:
                         total_input_tokens += event.usage.get("prompt_tokens", 0)
+                        turn_output_tokens += event.usage.get(
+                            "completion_tokens", 0
+                        )
                     yield event
                 elif event.type == StreamEventType.ERROR:
                     yield event
@@ -204,6 +239,17 @@ async def run_query(
                     return
                 elif event.type == StreamEventType.DONE:
                     break
+
+            # Record API cost for this turn
+            if cost_tracker is not None:
+                cost_tracker.record_usage(
+                    model,
+                    TokenUsage(
+                        input_tokens=total_input_tokens,
+                        output_tokens=turn_output_tokens,
+                    ),
+                )
+                turn_output_tokens = 0
 
             # Strip thinking blocks from output (some models leak internal reasoning)
             if collected_tool_calls:
@@ -333,6 +379,13 @@ async def run_query(
         tool_call_count += len(collected_tool_calls)
 
         # Execute tool calls (parallel)
+        # Yield activity events before execution so the UI can show a spinner
+        for tc in collected_tool_calls:
+            tool_name = _TOOL_NAME_MAP.get(tc.name, tc.name)
+            activity = _get_activity_description(registry, tool_name, tc.arguments)
+            if activity:
+                yield StreamEvent(type=StreamEventType.ACTIVITY, text=activity)
+
         tool_tasks = [
             _execute_tool(kernel, registry, tc, ctx) for tc in collected_tool_calls
         ]
@@ -347,8 +400,12 @@ async def run_query(
             else:
                 tool_result = raw_result
 
-            # Yield the tool call event
-            yield StreamEvent(type=StreamEventType.TOOL_CALL, tool_call=tc)
+            # Yield the tool call event with result metadata for UI rendering
+            yield StreamEvent(
+                type=StreamEventType.TOOL_CALL,
+                tool_call=tc,
+                tool_data=(tool_result.metadata if tool_result.metadata else None),
+            )
 
             # Append tool result message
             messages.append(
@@ -590,6 +647,52 @@ def _sanitize_messages(messages: list[Message]) -> list[Message]:
         sanitized.append(msg)
 
     return sanitized
+
+
+def _get_activity_description(
+    registry: ToolRegistry,
+    tool_name: str,
+    arguments: str,
+) -> str | None:
+    """Generate a human-readable activity description for the spinner."""
+    try:
+        args = json.loads(arguments) if arguments else {}
+    except json.JSONDecodeError:
+        args = {}
+
+    # Try the tool's own get_activity_description first
+    tool = registry.get(tool_name)
+    if tool is not None:
+        desc = tool.get_activity_description(**args)
+        if desc:
+            return desc
+
+    # Fall back to autogenerated descriptions based on tool name
+    if tool_name in ("read", "read_file", "file_read"):
+        path = args.get("path", args.get("file_path", ""))
+        return f"Reading {path}" if path else "Reading file"
+    if tool_name in ("write", "write_file", "file_write"):
+        path = args.get("path", args.get("file_path", ""))
+        return f"Writing {path}" if path else "Writing file"
+    if tool_name in ("edit", "edit_file", "file_edit"):
+        path = args.get("path", args.get("file_path", ""))
+        return f"Editing {path}" if path else "Editing file"
+    if tool_name in ("shell", "bash", "execute_command"):
+        cmd = args.get("command", "")
+        short_cmd = (cmd[:40] + "...") if len(cmd) > 40 else cmd
+        return f"Running {short_cmd}" if short_cmd else "Running command"
+    if tool_name in ("grep", "search_files"):
+        pattern = args.get("pattern", "")
+        return f"Searching for \"{pattern}\"" if pattern else "Searching"
+    if tool_name in ("glob", "find_files"):
+        pattern = args.get("pattern", "")
+        return f"Finding {pattern}" if pattern else "Finding files"
+    if tool_name == "git":
+        action = args.get("action", "")
+        return f"Running git {action}" if action else "Running git"
+    if tool_name in ("web_search", "web_fetch"):
+        return "Fetching web content"
+    return None
 
 
 def _parse_code_block_calls(text: str) -> list[ToolCallDelta]:

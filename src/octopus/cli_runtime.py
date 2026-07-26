@@ -20,13 +20,17 @@ from rich.live import Live
 from octopus.cli_ui import (
     COLOR_PRESETS,
     SLASH_COMMANDS,
+    ThinkingSpinner,
     TurnStats,
     console,
     display_banner,
+    generate_session_title,
     print_assistant_markdown,
     print_assistant_text_stream,
     print_background_message,
+    print_compact_summary,
     print_context_grid,
+    print_effort_indicator,
     print_error,
     print_help,
     print_info,
@@ -38,6 +42,7 @@ from octopus.cli_ui import (
     print_success,
     print_tool_call_result,
     print_tool_call_start,
+    print_tool_summary,
     print_warning,
 )
 from octopus.config.manager import (
@@ -49,6 +54,7 @@ from octopus.config.manager import (
 from octopus.core.kernel import Context, Kernel, PermissionMode
 from octopus.loop.compaction import CompactionEngine
 from octopus.loop.context import ConversationContext
+from octopus.loop.cost import CostTracker, TokenUsage
 from octopus.loop.engine import run_query
 from octopus.loop.models import Message, Role, StreamEventType
 from octopus.providers.litellm_adapter import LiteLLMProvider
@@ -299,6 +305,8 @@ async def run_single_prompt_async(
 
 def _display_loaded_messages(conversation: ConversationContext) -> None:
     """Display loaded conversation messages after session resume."""
+    from datetime import datetime
+
     from octopus.cli_ui import print_assistant_markdown
 
     # Skip system message
@@ -313,7 +321,8 @@ def _display_loaded_messages(conversation: ConversationContext) -> None:
 
     for msg in messages:
         if msg.role.value == "user":
-            console.print(f"[bold]>[/] {msg.content}")
+            timestamp = datetime.now().strftime("%H:%M")
+            console.print(f"[dim]{timestamp}[/dim] [bold]>[/] {msg.content}")
             console.print()
         elif msg.role.value == "assistant":
             if msg.content:
@@ -322,11 +331,17 @@ def _display_loaded_messages(conversation: ConversationContext) -> None:
 
                 text = msg.content
                 text = re.sub(r"<tool_call>.*?</tool_call>", "", text, flags=re.DOTALL)
-                text = re.sub(r"<function=.*?>.*?</function>", "", text, flags=re.DOTALL)
+                text = re.sub(
+                    r"<function=.*?>.*?</function>", "", text, flags=re.DOTALL
+                )
                 text = re.sub(r"<thinking>.*?</thinking>", "", text, flags=re.DOTALL)
-                text = re.sub(r"<tool_result>.*?</tool_result>", "", text, flags=re.DOTALL)
+                text = re.sub(
+                    r"<tool_result>.*?</tool_result>", "", text, flags=re.DOTALL
+                )
                 text = text.strip()
                 if text:
+                    timestamp = datetime.now().strftime("%H:%M")
+                    console.print(f"[dim]{timestamp}[/dim] ", end="")
                     print_assistant_markdown(text)
                     console.print()
         elif msg.role.value == "tool":
@@ -410,8 +425,12 @@ async def run_interactive_async(
                 workspace=str(ctx.workspace) if ctx.workspace else None,
             )
 
-        # Display banner — show resumed session ID if resuming
+        # Display banner — show session title if available, otherwise session ID
         display_session_id = resume_session if resume_session else ctx.session_id
+        # For new sessions without a session title yet, fall back to session ID
+        session_title = None
+        if resume_session:
+            session_title = resume_session[:8]  # Use ID prefix for resumed sessions
         display_banner(
             model=_resolve_model(model),
             workspace=str(ctx.workspace),
@@ -550,9 +569,7 @@ async def run_interactive_async(
 
             # /branch
             if cmd == "/branch":
-                conversation = await _handle_branch_command(
-                    conversation, kernel, ctx
-                )
+                conversation = await _handle_branch_command(conversation, kernel, ctx)
                 return False, conversation
 
             # /btw <question>
@@ -579,16 +596,12 @@ async def run_interactive_async(
 
             # /color
             if cmd == "/color":
-                _color_index, prompt_style = _handle_color_command(
-                    args, _color_index
-                )
+                _color_index, prompt_style = _handle_color_command(args, _color_index)
                 return False, conversation
 
             # /compact
             if cmd == "/compact":
-                await _handle_compact_command(
-                    conversation, compaction, kernel
-                )
+                await _handle_compact_command(conversation, compaction, kernel)
                 return False, conversation
 
             # /config
@@ -648,9 +661,25 @@ async def run_interactive_async(
                     break
                 continue
 
+            # Generate session title from first user message if not set
+            if not getattr(conversation, "_title_set", False) and not resume_session:
+                title = generate_session_title(user_input)
+                console.print(f"[dim]{title}[/]")  # Show auto-generated title
+                conversation._title_set = True  # type: ignore[attr-defined]
+
+            # Show timestamp for this turn (Pattern 7)
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%H:%M")
+
             # Add user message
             conversation.add_message(Message(role=Role.USER, content=user_input))
             console.print()
+
+            # Show effort indicator if reasoning effort is configured
+            from octopus.config.manager import load_config
+            _cfg = load_config()
+            if _cfg.model_reasoning_effort and _cfg.model_reasoning_effort != "high":
+                print_effort_indicator(_cfg.model_reasoning_effort)
 
             # Print assistant response arrow
             print_prompt_arrow()
@@ -662,12 +691,15 @@ async def run_interactive_async(
 
             # Track tool calls for display
             current_tool = None
+            turn_tool_displays: list = []  # For tool summary display (Pattern 9)
+            _compaction_data: dict[str, int | str] | None = None
 
             # Reset interrupt flag at start of each turn
             _interrupt_requested = False
 
             # Show thinking spinner while waiting for first token
             _first_content_arrived = False
+            _current_activity: str | None = None
             with Live(
                 console.status("[dim]Thinking...[/]", spinner="dots"),
                 console=console,
@@ -690,6 +722,17 @@ async def run_interactive_async(
                         console.print("\n[dim]Interrupted.[/]")
                         break
 
+                    # Handle activity events — update spinner text if still running
+                    if event.type == StreamEventType.ACTIVITY and not _first_content_arrived:
+                        _current_activity = event.text or ""
+                        live.update(
+                            console.status(
+                                f"[dim]{_current_activity}...[/]",
+                                spinner="dots",
+                            )
+                        )
+                        continue
+
                     # Stop spinner on first content event
                     if not _first_content_arrived and event.type in (
                         StreamEventType.TEXT,
@@ -708,16 +751,30 @@ async def run_interactive_async(
                             session_tool_calls += 1
                             # Finish previous tool if still open
                             if current_tool is not None:
-                                print_tool_call_result(current_tool, "")
+                                print_tool_call_result(
+                                    current_tool, "",
+                                    tool_data=event.tool_data,
+                                )
                             # Print new tool with newline prefix
                             console.print()
                             current_tool = print_tool_call_start(tc.name, tc.arguments)
+                            turn_tool_displays.append(current_tool)
 
                     elif event.type == StreamEventType.STATUS:
                         if not _first_content_arrived:
                             live.stop()
                             _first_content_arrived = True
-                        print_status(event.text or "")
+                        if event.text:
+                            print_status(event.text)
+                        # Check for compaction metadata (Pattern 5)
+                        if event.usage and "compaction_tokens_before" in event.usage:
+                            _compaction_data = {
+                                "messages_before": event.usage.get("compaction_messages_before", 0),
+                                "messages_after": event.usage.get("compaction_messages_after", 0),
+                                "tokens_before": event.usage.get("compaction_tokens_before", 0),
+                                "tokens_after": event.usage.get("compaction_tokens_after", 0),
+                                "strategy": event.usage.get("compaction_strategy", ""),
+                            }
 
                     elif event.type == StreamEventType.ERROR:
                         live.stop()
@@ -729,6 +786,21 @@ async def run_interactive_async(
             # Close any unclosed tool
             if current_tool is not None:
                 print_tool_call_result(current_tool, "")
+
+            # Show tool summary for multiple tool calls (Pattern 9)
+            if len(turn_tool_displays) > 1:
+                print_tool_summary(turn_tool_displays)
+
+            # Show compact summary if compaction occurred (Pattern 5)
+            if _compaction_data:
+                strategy_str = str(_compaction_data["strategy"]) if _compaction_data["strategy"] else "auto"
+                print_compact_summary(
+                    messages_before=_compaction_data["messages_before"],
+                    messages_after=_compaction_data["messages_after"],
+                    tokens_before=_compaction_data["tokens_before"],
+                    tokens_after=_compaction_data["tokens_after"],
+                    strategy=strategy_str,
+                )
 
             # Render response as markdown (strip XML tool calls first)
             if collected_text:
@@ -752,6 +824,8 @@ async def run_interactive_async(
                 full_text = full_text.strip()
                 if full_text:
                     console.print()
+                    # Show timestamp for assistant response (Pattern 7)
+                    console.print(f"[dim]{timestamp}[/dim] ", end="", highlight=False)
                     print_assistant_markdown(full_text)
 
             # Print turn status line
@@ -769,8 +843,6 @@ async def run_interactive_async(
 
     finally:
         await kernel.shutdown()
-
-
 
 
 async def _handle_model_command(conversation: ConversationContext) -> None:
@@ -1077,7 +1149,15 @@ async def _handle_init_command(conversation: ConversationContext) -> None:
             name = entry.name
             if name.startswith(".") and name not in (".github", ".gitignore"):
                 continue
-            if name in ("__pycache__", "node_modules", ".venv", "venv", "dist", "build", "target"):
+            if name in (
+                "__pycache__",
+                "node_modules",
+                ".venv",
+                "venv",
+                "dist",
+                "build",
+                "target",
+            ):
                 continue
             if entry.is_dir():
                 dir_entries.append(f"  {name}/")
@@ -1088,7 +1168,13 @@ async def _handle_init_command(conversation: ConversationContext) -> None:
 
     # Check for existing conventions files
     conventions: list[str] = []
-    for conv_file in (".editorconfig", ".prettierrc", ".eslintrc", "ruff.toml", ".ruff.toml"):
+    for conv_file in (
+        ".editorconfig",
+        ".prettierrc",
+        ".eslintrc",
+        "ruff.toml",
+        ".ruff.toml",
+    ):
         if (workspace / conv_file).exists():
             conventions.append(conv_file)
     if (workspace / ".github" / "workflows").exists():
@@ -1098,7 +1184,9 @@ async def _handle_init_command(conversation: ConversationContext) -> None:
     lines: list[str] = []
     lines.append("# OCTOPUS.md")
     lines.append("")
-    lines.append("This file provides guidance to Octopus Agent when working in this repository.")
+    lines.append(
+        "This file provides guidance to Octopus Agent when working in this repository."
+    )
     lines.append("")
 
     # Project overview
@@ -1172,9 +1260,7 @@ async def _handle_init_command(conversation: ConversationContext) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _handle_add_dir_command(
-    args: str, additional_dirs: list[Path]
-) -> None:
+def _handle_add_dir_command(args: str, additional_dirs: list[Path]) -> None:
     """Add a directory to the session's working directories."""
     if not args.strip():
         print_error("Usage: /add-dir <path>")
@@ -1388,9 +1474,7 @@ async def _handle_clear_command(
 # ---------------------------------------------------------------------------
 
 
-def _handle_color_command(
-    args: str, current_index: int
-) -> tuple[int, Any]:
+def _handle_color_command(args: str, current_index: int) -> tuple[int, Any]:
     """Change the prompt bar color.
 
     Usage:
@@ -1407,8 +1491,12 @@ def _handle_color_command(
         console.print("[accent]Available colors:[/]")
         for i, preset in enumerate(COLOR_PRESETS):
             marker = " <-- current" if i == current_index else ""
-            console.print(f"  [{preset['style']}]{preset['name']}[/] - {preset['label']}{marker}")
-        return current_index, Style.from_dict({"prompt": COLOR_PRESETS[current_index]["style"]})
+            console.print(
+                f"  [{preset['style']}]{preset['name']}[/] - {preset['label']}{marker}"
+            )
+        return current_index, Style.from_dict(
+            {"prompt": COLOR_PRESETS[current_index]["style"]}
+        )
 
     if args.strip() in ("default", "reset"):
         return 0, Style.from_dict({"prompt": COLOR_PRESETS[0]["style"]})
@@ -1423,7 +1511,9 @@ def _handle_color_command(
         print_error(f"Unknown color: {args.strip()}")
         _names = ", ".join(p["name"] for p in COLOR_PRESETS)
         print_info(f"Available: {_names}, default")
-        return current_index, Style.from_dict({"prompt": COLOR_PRESETS[current_index]["style"]})
+        return current_index, Style.from_dict(
+            {"prompt": COLOR_PRESETS[current_index]["style"]}
+        )
 
     # Cycle to next color
     new_index = (current_index + 1) % len(COLOR_PRESETS)

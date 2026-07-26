@@ -13,6 +13,7 @@ class ShellTool:
 
     name = "shell"
     description = "Execute a shell command and return stdout/stderr. Dangerous commands require approval."
+    is_destructive = True
     input_schema: dict[str, Any] = {
         "type": "object",
         "properties": {
