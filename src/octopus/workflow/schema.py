@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class PhaseStrategy(str, Enum):
+class PhaseStrategy(StrEnum):
     SEQUENTIAL = "sequential"  # Run one phase at a time
     PARALLEL = "parallel"  # Run all tasks concurrently
     PIPELINE = "pipeline"  # Pipeline: items flow through stages independently
