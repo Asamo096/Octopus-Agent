@@ -222,10 +222,10 @@ def select_option(
     # Run the application — handle both sync and async contexts
     import asyncio
     try:
-        loop = asyncio.get_running_loop()
-        # Inside running event loop — delegate to new thread
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(1) as pool:
+        asyncio.get_running_loop()
+        # Inside running event loop — delegate to a new thread
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(1) as pool:
             future = pool.submit(app.run)
             future.result()
     except RuntimeError:
