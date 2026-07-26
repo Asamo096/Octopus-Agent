@@ -483,9 +483,6 @@ async def run_interactive_async(
             permission_mode=permission_mode,
         )
 
-        # Clear terminal after banner for clean workspace
-        console.clear()
-
         # prompt_toolkit session for styled input with proper cursor positioning
         from prompt_toolkit import PromptSession
         from prompt_toolkit.formatted_text import HTML
