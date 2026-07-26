@@ -425,10 +425,7 @@ async def run_interactive_async(
 
         # Display banner — show session title if available, otherwise session ID
         display_session_id = resume_session if resume_session else ctx.session_id
-        # For new sessions without a session title yet, fall back to session ID
-        session_title = None
-        if resume_session:
-            session_title = resume_session[:8]  # Use ID prefix for resumed sessions
+        # Display banner
         display_banner(
             model=_resolve_model(model),
             workspace=str(ctx.workspace),
