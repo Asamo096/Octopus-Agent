@@ -20,7 +20,6 @@ from rich.live import Live
 from octopus.cli_ui import (
     COLOR_PRESETS,
     SLASH_COMMANDS,
-    ThinkingSpinner,
     TurnStats,
     console,
     display_banner,
@@ -54,7 +53,6 @@ from octopus.config.manager import (
 from octopus.core.kernel import Context, Kernel, PermissionMode
 from octopus.loop.compaction import CompactionEngine
 from octopus.loop.context import ConversationContext
-from octopus.loop.cost import CostTracker, TokenUsage
 from octopus.loop.engine import run_query
 from octopus.loop.models import Message, Role, StreamEventType
 from octopus.providers.litellm_adapter import LiteLLMProvider
@@ -437,6 +435,9 @@ async def run_interactive_async(
             session_id=display_session_id,
             permission_mode=permission_mode,
         )
+
+        # Clear terminal after banner for clean workspace
+        console.clear()
 
         # prompt_toolkit session for styled input with proper cursor positioning
         from prompt_toolkit import PromptSession
