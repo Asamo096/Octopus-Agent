@@ -14,6 +14,23 @@ from octopus.tui.widgets.input import ChatInput, build_suggestions_text
 from octopus.tui.widgets.status import StatusBar
 
 
+# Semantic color tokens — single source of truth
+C = {
+    "bg":       "#0d1117",
+    "surface":  "#161b22",
+    "border":   "#21262d",
+    "active":   "#30363d",
+    "text":     "#c9d1d9",
+    "dim":      "#8b949e",
+    "muted":    "#484f58",
+    "accent":   "#58a6ff",
+    "accent2":  "#00afff",
+    "success":  "#7ee787",
+    "warning":  "#d29922",
+    "error":    "#f85149",
+    "code_fg":  "#d2a8ff",
+}
+
 ASCII_LOGO = [
     " ██████╗  ██████╗████████╗ ██████╗ ██████╗ ██╗   ██╗███████╗",
     "██╔═══██╗██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗██║   ██║██╔════╝",

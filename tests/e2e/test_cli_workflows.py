@@ -139,3 +139,42 @@ def test_code_logs(tmp_path: Path) -> None:
     assert result.returncode == 0
     output = result.stdout + result.stderr
     assert "audit" in output.lower() or "no" in output.lower() or "found" in output.lower()
+
+
+# ---------------------------------------------------------------------------
+# E2E smoke tests
+# ---------------------------------------------------------------------------
+
+
+def test_octopus_cli_help_shows_all_commands() -> None:
+    """CLI help shows expected subcommands."""
+    result = _octopus_cmd("--help")
+    assert result.returncode == 0
+    for cmd in ("cli", "code", "config", "session", "provider", "permissions"):
+        assert cmd in result.stdout, f"Missing command: {cmd}"
+
+
+def test_octopus_code_subcommands() -> None:
+    """All code subcommands show usage."""
+    for action in ("init", "fix", "test", "refactor", "logs"):
+        result = _octopus_cmd(f"code --help")
+        assert result.returncode == 0
+        assert action in result.stdout, f"Missing code action: {action}"
+
+
+def test_octopus_config_show_works() -> None:
+    """Config show runs successfully."""
+    result = _octopus_cmd("config show")
+    assert result.returncode == 0
+
+
+def test_octopus_session_list_works() -> None:
+    """Session list runs without crashing."""
+    result = _octopus_cmd("session list")
+    assert result.returncode == 0
+
+
+def test_octopus_permissions_list_works() -> None:
+    """Permissions list shows expected content."""
+    result = _octopus_cmd("permissions list")
+    assert result.returncode == 0
