@@ -12,8 +12,10 @@ The loop:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
+import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
@@ -313,40 +315,12 @@ async def run_query(
                             ]
                             collected_text.clear()
 
-            # Normalize tool names and deduplicate
+            # Normalize tool names and aggressive dedup
             if collected_tool_calls:
-                # Apply tool name mapping first
                 for tc in collected_tool_calls:
                     tc.name = _TOOL_NAME_MAP.get(tc.name, tc.name)
 
-                # Deduplicate by (normalized_name, normalized_args)
-                seen = set()
-                seen_paths: set[str] = set()  # cross-tool: same path
-                unique_calls = []
-                for tc in collected_tool_calls:
-                    # Normalize JSON arguments: sort keys so {"b":1,"a":2} == {"a":2,"b":1}
-                    args_obj: dict[str, Any] = {}
-                    try:
-                        args_obj = json.loads(tc.arguments) if tc.arguments else {}
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-                    args_normalized = json.dumps(args_obj, sort_keys=True)
-
-                    key = (tc.name, args_normalized)
-                    if key in seen:
-                        continue
-
-                    # Cross-tool dedup: if same file path is targeted by write+shell, keep first
-                    path = args_obj.get("path") or args_obj.get("file") if isinstance(args_obj, dict) else None
-                    if path and tc.name in ("write", "shell"):
-                        path_key = f"file:{path}"
-                        if path_key in seen_paths:
-                            continue
-                        seen_paths.add(path_key)
-
-                    seen.add(key)
-                    unique_calls.append(tc)
-                collected_tool_calls = unique_calls
+                collected_tool_calls = _dedup_tool_calls(collected_tool_calls)
         except Exception as exc:
             error_msg = str(exc)
             # Reactive compaction on "prompt too long" errors
@@ -453,6 +427,77 @@ async def run_query(
 
 
 # Map common tool name variations to registered names
+def _dedup_tool_calls(calls: list[Any]) -> list[Any]:
+    """Aggressive dedup — content hash + path-level + shell normalization.
+
+    Prevents the model from making 10+ redundant calls to the same file.
+    """
+    seen_hashes: set[tuple[str, str]] = set()
+    seen_paths: set[str] = set()
+    unique: list[Any] = []
+
+    for tc in calls:
+        args_obj: dict[str, Any] = {}
+        try:
+            args_obj = json.loads(tc.arguments) if tc.arguments else {}
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # Write/edit tools: hash content for dedup
+        if tc.name in ("write", "write_file", "edit", "edit_file"):
+            content = str(args_obj.get("content") or args_obj.get("new_string", ""))
+            path = str(args_obj.get("path") or args_obj.get("file_path", ""))
+            content_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
+
+            # Same (tool, content_hash) → skip
+            key = (tc.name, content_hash)
+            if key in seen_hashes:
+                logger.info("Dedup: skip duplicate %s (same content hash)", tc.name)
+                continue
+            seen_hashes.add(key)
+
+            # Same path via any tool → skip (cross-tool dedup)
+            if path:
+                if path in seen_paths:
+                    logger.info("Dedup: skip %s for %s (path already targeted)", tc.name, path)
+                    continue
+                seen_paths.add(path)
+
+        # Shell: normalize command, extract target paths
+        elif tc.name == "shell":
+            cmd = str(args_obj.get("command", ""))
+            # Normalize: collapse whitespace, normalize heredoc markers
+            normalized = re.sub(r"\s+", " ", cmd).strip()
+            content_hash = hashlib.sha256(normalized.encode()).hexdigest()[:16]
+            key = ("shell", content_hash)
+            if key in seen_hashes:
+                logger.info("Dedup: skip duplicate shell (same normalized command)")
+                continue
+            seen_hashes.add(key)
+
+            # Extract file target from shell commands
+            for pattern in [r">\s*(\S+)", r"touch\s+(\S+)", r"rm\s+(\S+)",
+                            r"cat\s*<<.*?>?\s*(\S+)", r"printf.*?>(\S+)"]:
+                m = re.search(pattern, cmd)
+                if m:
+                    path = m.group(1).strip().strip("'\"")
+                    if path in seen_paths:
+                        logger.info("Dedup: skip shell for %s (path already targeted)", path)
+                        break
+                    seen_paths.add(path)
+                    break
+            else:
+                unique.append(tc)
+                continue
+            # If we broke out of the for loop (path was in seen_paths), skip
+            if path in seen_paths and m:
+                continue
+
+        unique.append(tc)
+
+    return unique
+
+
 _TOOL_NAME_MAP = {
     "execute_shell": "shell",
     "execute_command": "shell",
