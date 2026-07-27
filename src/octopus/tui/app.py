@@ -220,10 +220,13 @@ class OctopusTUI(App):
     # ---- Resize ----
 
     def on_resize(self, event: Any) -> None:
+        self._debounced_resize()
+
+    def _debounced_resize(self) -> None:
+        """Debounce resize to avoid jank during rapid terminal resizes."""
         try:
-            self.query_one("#banner-line", Static).update(
-                "─" * max(self.size.width, 60)
-            )
+            w = max(self.size.width, 60)
+            self.query_one("#banner-line", Static).update("─" * w)
             if self._compact_banner_widget and self._compact_mode:
                 self._compact_banner_widget.update(self._compact_banner())
         except Exception:
@@ -257,20 +260,20 @@ class OctopusTUI(App):
         self._log().mount(
             Static(f"[bold #58a6ff]❯[/] {text}", classes="user-msg")
         )
-        self._log().scroll_end(animate=False)
+        self._log().scroll_end(animate=True, duration=0.2)
 
     def add_assistant_message(self, text: str) -> None:
         self._log().mount(
             Static(_render(text), classes="assistant-msg")
         )
-        self._log().scroll_end(animate=False)
+        self._log().scroll_end(animate=True, duration=0.3)
         self._last_assistant_text = text
 
     def add_thinking(self, text: str) -> None:
         self._log().mount(
             Static(f"[dim italic #484f58]  Thought: {text}[/]", classes="thinking-msg")
         )
-        self._log().scroll_end(animate=False)
+        self._log().scroll_end(animate=True, duration=0.15)
 
     def add_tool_card(self, name: str, args_str: str) -> Static:
         """Add a tool execution card, returns the card for result updates."""

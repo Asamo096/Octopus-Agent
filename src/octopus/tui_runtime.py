@@ -243,7 +243,26 @@ async def run_tui_async(
                 await conversation.save(kernel.state)
 
             except Exception as e:
-                app.add_error_message(str(e))
+                app.hide_thinking()
+                msg = str(e).lower()
+                if "connect" in msg or "name or service not known" in msg:
+                    app.add_error_message(
+                        "Cannot reach API. Check network and base_url in /config."
+                    )
+                elif "401" in msg or "unauthorized" in msg:
+                    app.add_error_message(
+                        "Auth failed. Check API key in ~/.octopus/auth.json"
+                    )
+                elif "429" in msg or "rate limit" in msg:
+                    app.add_error_message(
+                        "Rate limited. Wait a moment and try again."
+                    )
+                elif "timeout" in msg:
+                    app.add_error_message(
+                        "Request timed out. Provider may be slow."
+                    )
+                else:
+                    app.add_error_message(f"[dim]{str(e)}[/]")
 
     # Start the message processor
     _task = asyncio.create_task(_process_messages())
@@ -390,6 +409,7 @@ def _show_help(app: "OctopusTUI") -> None:
     app.add_system_message(
         "Commands:\n"
         "/help        Show this help\n"
+        "/audit       View audit trail of all actions\n"
         "/clear       New session\n"
         "/compact     Force compaction\n"
         "/config      Show config\n"
