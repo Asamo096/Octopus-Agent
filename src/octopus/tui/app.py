@@ -14,33 +14,75 @@ from octopus.tui.widgets.input import ChatInput, build_suggestions_text
 from octopus.tui.widgets.status import StatusBar
 
 
-# Theme definitions
-THEMES = {
-    "dark": {
+# Theme definitions — curated from popular terminal/editor themes
+THEMES: dict[str, dict[str, str]] = {
+    "dracula": {
+        "bg": "#282a36", "surface": "#21222c", "border": "#44475a",
+        "active": "#6272a4", "text": "#f8f8f2", "dim": "#6272a4",
+        "muted": "#44475a", "accent": "#bd93f9", "accent2": "#ff79c6",
+        "success": "#50fa7b", "warning": "#ffb86c", "error": "#ff5555",
+        "code_fg": "#ff79c6", "input_bg": "#282a36", "status_bg": "#21222c",
+    },
+    "monokai": {
+        "bg": "#272822", "surface": "#1e1f1c", "border": "#49483e",
+        "active": "#75715e", "text": "#f8f8f2", "dim": "#75715e",
+        "muted": "#49483e", "accent": "#a6e22e", "accent2": "#66d9ef",
+        "success": "#a6e22e", "warning": "#e6db74", "error": "#f92672",
+        "code_fg": "#ae81ff", "input_bg": "#272822", "status_bg": "#1e1f1c",
+    },
+    "nord": {
+        "bg": "#2e3440", "surface": "#3b4252", "border": "#4c566a",
+        "active": "#81a1c1", "text": "#eceff4", "dim": "#81a1c1",
+        "muted": "#4c566a", "accent": "#88c0d0", "accent2": "#5e81ac",
+        "success": "#a3be8c", "warning": "#ebcb8b", "error": "#bf616a",
+        "code_fg": "#b48ead", "input_bg": "#2e3440", "status_bg": "#3b4252",
+    },
+    "gruvbox": {
+        "bg": "#282828", "surface": "#1d2021", "border": "#504945",
+        "active": "#bdae93", "text": "#ebdbb2", "dim": "#a89984",
+        "muted": "#665c54", "accent": "#fabd2f", "accent2": "#83a598",
+        "success": "#b8bb26", "warning": "#fe8019", "error": "#fb4934",
+        "code_fg": "#d3869b", "input_bg": "#282828", "status_bg": "#1d2021",
+    },
+    "catppuccin-mocha": {
+        "bg": "#1e1e2e", "surface": "#181825", "border": "#313244",
+        "active": "#45475a", "text": "#cdd6f4", "dim": "#6c7086",
+        "muted": "#45475a", "accent": "#89b4fa", "accent2": "#cba6f7",
+        "success": "#a6e3a1", "warning": "#f9e2af", "error": "#f38ba8",
+        "code_fg": "#f5c2e7", "input_bg": "#1e1e2e", "status_bg": "#181825",
+    },
+    "solarized-dark": {
+        "bg": "#002b36", "surface": "#073642", "border": "#586e75",
+        "active": "#657b83", "text": "#eee8d5", "dim": "#839496",
+        "muted": "#586e75", "accent": "#268bd2", "accent2": "#2aa198",
+        "success": "#859900", "warning": "#b58900", "error": "#dc322f",
+        "code_fg": "#d33682", "input_bg": "#002b36", "status_bg": "#073642",
+    },
+    "tokyo-night": {
+        "bg": "#1a1b26", "surface": "#16161e", "border": "#2f3346",
+        "active": "#565f89", "text": "#c0caf5", "dim": "#565f89",
+        "muted": "#2f3346", "accent": "#7aa2f7", "accent2": "#bb9af7",
+        "success": "#9ece6a", "warning": "#e0af68", "error": "#f7768e",
+        "code_fg": "#bb9af7", "input_bg": "#1a1b26", "status_bg": "#16161e",
+    },
+    "rose-pine": {
+        "bg": "#191724", "surface": "#1f1d2e", "border": "#26233a",
+        "active": "#6e6a86", "text": "#e0def4", "dim": "#908caa",
+        "muted": "#6e6a86", "accent": "#ebbcba", "accent2": "#c4a7e7",
+        "success": "#31748f", "warning": "#f6c177", "error": "#eb6f92",
+        "code_fg": "#c4a7e7", "input_bg": "#191724", "status_bg": "#1f1d2e",
+    },
+    "github-dark": {
         "bg": "#0d1117", "surface": "#161b22", "border": "#21262d",
         "active": "#30363d", "text": "#c9d1d9", "dim": "#8b949e",
         "muted": "#484f58", "accent": "#58a6ff", "accent2": "#00afff",
         "success": "#7ee787", "warning": "#d29922", "error": "#f85149",
         "code_fg": "#d2a8ff", "input_bg": "#0d1117", "status_bg": "#161b22",
     },
-    "light": {
-        "bg": "#ffffff", "surface": "#f6f8fa", "border": "#d0d7de",
-        "active": "#afb8c1", "text": "#1f2328", "dim": "#656d76",
-        "muted": "#8c959f", "accent": "#0969da", "accent2": "#0550ae",
-        "success": "#1a7f37", "warning": "#9a6700", "error": "#cf222e",
-        "code_fg": "#8250df", "input_bg": "#ffffff", "status_bg": "#f6f8fa",
-    },
-    "contrast": {
-        "bg": "#000000", "surface": "#1a1a1a", "border": "#ffffff",
-        "active": "#ffff00", "text": "#ffffff", "dim": "#cccccc",
-        "muted": "#999999", "accent": "#00ffff", "accent2": "#00ff00",
-        "success": "#00ff00", "warning": "#ffff00", "error": "#ff0000",
-        "code_fg": "#ff88ff", "input_bg": "#000000", "status_bg": "#1a1a1a",
-    },
 }
 
 # Active theme (mutable)
-C = dict(THEMES["dark"])
+C = dict(THEMES["github-dark"])
 
 ASCII_LOGO = [
     " ██████╗  ██████╗████████╗ ██████╗ ██████╗ ██╗   ██╗███████╗",
@@ -76,18 +118,19 @@ class OctopusTUI(App):
 
     #main { height: 1fr; }
     #chat-container {
-        height: 1fr; border-left: solid #21262d;
-        padding: 0 0 0 1; margin: 0 2;
+        height: 1fr; border: round #21262d;
+        padding: 1 2; margin: 0 1;
+        background: #0d1117;
     }
     #chat-log { height: 1fr; }
 
     #input-divider {
-        height: 1; color: #30363d; margin: 0 2;
-        background: #30363d;
+        height: 1; margin: 0 1; background: #30363d;
     }
     #input-area {
         height: auto; min-height: 4; max-height: 10;
-        padding: 1 1 0 1; background: #0d1117;
+        border: round #21262d; padding: 1; margin: 0 1;
+        background: #0d1117;
     }
     #suggestions {
         height: auto; max-height: 10; padding: 0 1;
@@ -411,48 +454,41 @@ class OctopusTUI(App):
     # ---- Actions ----
 
     def action_toggle_theme(self) -> None:
-        """Cycle through themes: dark → light → contrast → dark."""
+        """Cycle through all themes."""
         names = list(THEMES.keys())
         try:
             idx = names.index(self._theme_name)
         except ValueError:
             idx = 0
         self._theme_name = names[(idx + 1) % len(names)]
-        # Update global color dict
         C.update(THEMES[self._theme_name])
         self._apply_theme()
-        self.add_system_message(f"Theme: [bold]{self._theme_name}[/]")
+        self.add_system_message(
+            f"Theme: [bold]{self._theme_name}[/]  [dim](Ctrl+T to cycle, /theme <name> to set)[/]"
+        )
 
     def _apply_theme(self) -> None:
         """Apply current theme colors to all visible widgets."""
         c = C
-        # Screen background
         self.screen.styles.background = c["bg"]
-        # Status bar
-        try:
-            sb = self.query_one("#status-bar", StatusBar)
-            sb.styles.background = c["status_bg"]
-        except Exception:
-            pass
-        # Input area
-        try:
-            inp = self.query_one("#input-area", Vertical)
-            inp.styles.background = c["bg"]
-        except Exception:
-            pass
-        # Chat log
-        try:
-            cl = self.query_one("#chat-log", VerticalScroll)
-            cl.styles.background = c["bg"]
-        except Exception:
-            pass
-        # Chat input
+        for wid, styles in [
+            ("#status-bar", {"background": c["status_bg"]}),
+            ("#chat-container", {"background": c["bg"], "border": ("round", c["border"])}),
+            ("#input-area", {"background": c["bg"], "border": ("round", c["border"])}),
+            ("#chat-log", {"background": c["bg"]}),
+            ("#banner", {"background": c["bg"]}),
+        ]:
+            try:
+                w = self.query_one(wid)
+                for prop, val in styles.items():
+                    setattr(w.styles, prop, val)
+            except Exception:
+                pass
         try:
             ci = self.query_one("#chat-input", ChatInput)
             ci.styles.background = c["input_bg"]
         except Exception:
             pass
-        # Refresh banner
         try:
             if self._compact_banner_widget and self._compact_mode:
                 self._compact_banner_widget.update(self._compact_banner())

@@ -365,7 +365,10 @@ async def _handle_slash_command(
         return
 
     if cmd == "/theme":
-        app.action_toggle_theme()
+        if args:
+            _handle_theme(app, args)
+        else:
+            _list_themes(app)
         return
 
     if cmd == "/effort":
@@ -485,6 +488,36 @@ async def _handle_audit(app: "OctopusTUI", kernel: Kernel, args: str) -> None:
         )
     lines.append(f"\n[dim]{len(events)} events. /audit <n> <tool> to filter.[/]")
     app.add_system_message("\n".join(lines))
+
+
+def _list_themes(app: "OctopusTUI") -> None:
+    """Show all available themes."""
+    current = app._theme_name
+    lines = ["[bold]Available Themes[/]\n"]
+    for name in THEMES_KEYS:
+        marker = " [green]*[/]" if name == current else ""
+        lines.append(f"  {name}{marker}")
+    lines.append(f"\n[dim]Use /theme <name> or Ctrl+T to switch.[/]")
+    app.add_system_message("\n".join(lines))
+
+
+def _handle_theme(app: "OctopusTUI", name: str) -> None:
+    """Set a specific theme by name."""
+    if name in THEMES_KEYS:
+        app._theme_name = name
+        from octopus.tui.app import C, THEMES
+        C.update(THEMES[name])
+        app._apply_theme()
+        app.add_system_message(f"Theme: [bold]{name}[/]")
+    else:
+        _list_themes(app)
+
+
+THEMES_KEYS = [
+    "dracula", "monokai", "nord", "gruvbox",
+    "catppuccin-mocha", "solarized-dark", "tokyo-night",
+    "rose-pine", "github-dark",
+]
 
 
 def _handle_effort(app: "OctopusTUI", args: str) -> None:
