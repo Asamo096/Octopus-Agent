@@ -151,8 +151,12 @@ async def run_tui_async(
             # Run agent loop with streaming + tool cards
             turn_tool_calls = 0
             streaming_started = False
+            first_token = False
             raw_text: list[str] = []
             active_cards: dict[str, Any] = {}  # tool_call_id → card widget
+
+            # Show Thinking... while waiting
+            app.show_thinking()
 
             try:
                 async for event in run_query(
@@ -167,10 +171,14 @@ async def run_tui_async(
                 ):
                     if getattr(app, "_interrupt_requested", False):
                         app._interrupt_requested = False  # type: ignore
+                        app.hide_thinking()
                         app.add_system_message("[Interrupted]")
                         break
 
                     if event.type == StreamEventType.TEXT:
+                        if not first_token:
+                            first_token = True
+                            app.hide_thinking()
                         chunk = event.text or ""
                         raw_text.append(chunk)
 
@@ -193,6 +201,9 @@ async def run_tui_async(
                             app.append_stream(display_chunk)
 
                     elif event.type == StreamEventType.TOOL_CALL:
+                        if not first_token:
+                            first_token = True
+                            app.hide_thinking()
                         tc = event.tool_call
                         if tc:
                             turn_tool_calls += 1
@@ -225,11 +236,10 @@ async def run_tui_async(
                         else:
                             app.add_assistant_message(full.strip())
 
-                # Status update
+                # Update token display after turn
                 tokens = conversation.estimate_tokens()
                 status = app.query_one("#status-bar")
-                status.update_stats(tokens=tokens, tool_calls=turn_tool_calls)
-
+                status.update_tokens(tokens)
                 await conversation.save(kernel.state)
 
             except Exception as e:
@@ -305,6 +315,10 @@ async def _handle_slash_command(
         app.add_system_message(f"New session: {new_id[:8]}")
         return
 
+    if cmd == "/audit":
+        await _handle_audit(app, kernel, args)
+        return
+
     if cmd == "/compact":
         before = conversation.estimate_tokens()
         result = compaction.auto_compact(conversation)
@@ -329,6 +343,10 @@ async def _handle_slash_command(
             f"{len(conversation.messages)} messages, "
             f"threshold: {compaction.auto_compact_threshold:,}"
         )
+        return
+
+    if cmd == "/effort":
+        _handle_effort(app, args)
         return
 
     if cmd == "/model":
@@ -377,6 +395,7 @@ def _show_help(app: "OctopusTUI") -> None:
         "/config      Show config\n"
         "/context     Show context usage\n"
         "/model       Select model\n"
+        "/effort      Set reasoning effort (low/medium/high/max)\n"
         "/tokens      Token estimate\n"
         "/reset       Reset conversation\n"
         "/cd <path>   Change directory\n"
@@ -398,6 +417,67 @@ def _show_config(app: "OctopusTUI", args: str) -> None:
         if pcfg.base_url:
             lines.append(f"BASE_URL ({pname}): {pcfg.base_url}")
     app.add_system_message("\n".join(lines))
+
+
+async def _handle_audit(app: "OctopusTUI", kernel: Kernel, args: str) -> None:
+    """Show recent audit log entries with color-coded decisions."""
+    limit = 20
+    tool_filter = None
+    if args:
+        for part in args.split():
+            if part.isdigit():
+                limit = min(int(part), 100)
+            else:
+                tool_filter = part
+
+    events = await kernel.audit.query()
+    if tool_filter:
+        events = [e for e in events if e.tool == tool_filter]
+    events = events[-limit:]
+
+    if not events:
+        app.add_system_message("No audit events found.")
+        return
+
+    lines = ["[bold]Audit Trail[/]\n"]
+    for e in reversed(events):
+        ts = e.timestamp.strftime("%H:%M:%S")
+        if e.permission_decision == "ALLOWED":
+            color = "#7ee787"
+        elif e.permission_decision == "DENIED":
+            color = "#f85149"
+        elif e.permission_decision == "USER_DENIED":
+            color = "#d29922"
+        else:
+            color = "#8b949e"
+
+        args_str = str(e.args)[:60]
+        dur = f"{e.duration:.0f}ms" if e.duration < 1 else f"{e.duration:.1f}s"
+        lines.append(
+            f"[dim]{ts}[/]  [{color}]{e.tool}[/]  "
+            f"[dim]{args_str}[/]  [{color}]{e.permission_decision}[/]  "
+            f"[dim]{dur}[/]"
+        )
+    lines.append(f"\n[dim]{len(events)} events. /audit <n> <tool> to filter.[/]")
+    app.add_system_message("\n".join(lines))
+
+
+def _handle_effort(app: "OctopusTUI", args: str) -> None:
+    """Handle /effort command — cycle or set reasoning effort."""
+    levels = ["low", "medium", "high", "max"]
+    current = getattr(app, "_effort", "high")
+
+    if args in levels:
+        current = args
+    else:
+        try:
+            idx = levels.index(current)
+        except ValueError:
+            idx = 2  # default to high
+        current = levels[(idx + 1) % len(levels)]
+
+    app.set_effort(current)
+    app.add_system_message(f"Reasoning effort: [bold]{current}[/]")
 
 
 async def _select_model(app: "OctopusTUI", conversation: ConversationContext) -> None:

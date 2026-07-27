@@ -47,11 +47,18 @@ class OctopusTUI(App):
     #banner-line { height: 1; color: #21262d; margin: 0 2; }
 
     #main { height: 1fr; }
-    #chat-log { height: 1fr; padding: 0 2; }
+    #chat-container {
+        height: 1fr; border-left: solid #21262d;
+        padding: 0 0 0 1; margin: 0 2;
+    }
+    #chat-log { height: 1fr; }
 
+    #input-divider {
+        height: 1; color: #30363d; margin: 0 2;
+        background: #30363d;
+    }
     #input-area {
         height: auto; min-height: 4; max-height: 10;
-        border-top: solid #21262d;
         padding: 1 1 0 1; background: #0d1117;
     }
     #suggestions {
@@ -68,6 +75,9 @@ class OctopusTUI(App):
     .user-msg { color: #58a6ff; margin: 1 0 0 0; }
     .assistant-msg { color: #c9d1d9; margin: 1 0; }
     .thinking-msg { color: #484f58; margin: 0; }
+    .thinking-indicator {
+        color: #484f58; margin: 0; text-style: italic;
+    }
     .tool-card {
         margin: 1 0; padding: 1 2;
         border: solid #21262d; background: #161b22;
@@ -117,8 +127,13 @@ class OctopusTUI(App):
         self._last_assistant_text = ""
         self._streaming_widget: Static | None = None
         self._streaming_text = ""
+        self._streaming_pending = ""
+        self._streaming_timer: Any = None
         self._compact_banner_widget: Static | None = None
         self._compact_mode = False
+        self._effort = "high"
+        self._thinking_widget: Static | None = None
+        self._thinking_timer: Any = None
 
     # ---- Compose ----
 
@@ -134,7 +149,9 @@ class OctopusTUI(App):
 
         yield Static("─" * max(self.size.width, 60), id="banner-line")
         with Vertical(id="main"):
-            yield VerticalScroll(id="chat-log")
+            with Vertical(id="chat-container"):
+                yield VerticalScroll(id="chat-log")
+            yield Static("", id="input-divider")
             with Vertical(id="input-area"):
                 yield ChatInput(id="chat-input")
                 yield Static("", id="suggestions")
@@ -176,11 +193,12 @@ class OctopusTUI(App):
             model = model.split("/", 1)[1]
         model = self._short(model)
         ws_name = Path(self.octopus_workspace).name
+        effort = "" if self._effort == "high" else f"  [dim]effort:{self._effort}[/]"
         return (
             f"[bold #00afff]Octopus[/]  "
             f"[dim]{model}[/]  "
             f"[dim]{self.octopus_permission_mode}[/]  "
-            f"[dim]{ws_name}[/]"
+            f"[dim]{ws_name}[/]{effort}"
         )
 
     def _info(self) -> str:
@@ -189,7 +207,8 @@ class OctopusTUI(App):
             model = model.split("/", 1)[1]
         model = self._short(model)
         ws_name = Path(self.octopus_workspace).name
-        return f"MODEL: {model}  |  PERM: {self.octopus_permission_mode}  |  PATH: {ws_name}"
+        effort = "" if self._effort == "high" else f"  |  EFFORT: {self._effort}"
+        return f"MODEL: {model}  |  PERM: {self.octopus_permission_mode}  |  PATH: {ws_name}{effort}"
 
     @staticmethod
     def _short(model: str) -> str:
@@ -286,6 +305,24 @@ class OctopusTUI(App):
     def clear_chat(self) -> None:
         self._log().remove_children()
 
+    # ---- Thinking indicator ----
+
+    def show_thinking(self) -> None:
+        """Show animated Thinking... indicator while waiting for model."""
+        if self._thinking_widget is not None:
+            return  # Already showing
+        self._thinking_widget = Static(
+            "[dim italic #484f58]  Thinking...[/]", classes="thinking-indicator"
+        )
+        self._log().mount(self._thinking_widget)
+        self._log().scroll_end(animate=False)
+
+    def hide_thinking(self) -> None:
+        """Remove the Thinking... indicator."""
+        if self._thinking_widget is not None:
+            self._thinking_widget.remove()
+            self._thinking_widget = None
+
     # ---- Streaming ----
 
     def begin_streaming(self) -> None:
@@ -294,12 +331,27 @@ class OctopusTUI(App):
         self._log().mount(self._streaming_widget)
 
     def append_stream(self, text: str) -> None:
-        if self._streaming_widget is not None:
-            self._streaming_text += text
+        """Buffer stream chunks, flush every 50ms to avoid jank."""
+        if self._streaming_widget is None:
+            return
+        self._streaming_text += text
+        self._streaming_pending += text
+        # Cancel previous timer, set new one
+        if self._streaming_timer is not None:
+            self._streaming_timer.stop()
+        self._streaming_timer = self.set_timer(0.05, self._flush_stream)
+
+    def _flush_stream(self) -> None:
+        """Apply buffered stream text to the widget."""
+        if self._streaming_widget is not None and self._streaming_pending:
             self._streaming_widget.update(self._streaming_text)
+            self._streaming_pending = ""
             self._log().scroll_end(animate=False)
 
     def finish_streaming(self, raw_text: str) -> None:
+        if self._streaming_timer is not None:
+            self._streaming_timer.stop()
+        self._flush_stream()
         if self._streaming_widget is not None:
             self._streaming_widget.remove()
             self._streaming_widget = None
@@ -362,6 +414,11 @@ class OctopusTUI(App):
                 except Exception:
                     continue
         self.add_system_message("Copied." if copied else "Copy failed. Install xclip/wl-copy.")
+
+    def set_effort(self, level: str) -> None:
+        """Set reasoning effort level."""
+        self._effort = level
+        self.update_info()
 
     def action_interrupt(self) -> None:
         pass

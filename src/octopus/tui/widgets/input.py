@@ -6,6 +6,8 @@ Up/Down: navigate suggestions  |  Tab: accept  |  Escape: dismiss
 
 from __future__ import annotations
 
+from typing import Any
+
 from textual import events
 from textual.message import Message
 from textual.widgets import TextArea
@@ -13,10 +15,12 @@ from textual.widgets import TextArea
 
 SLASH_COMMANDS = [
     ("/help", "Show available commands"),
+    ("/audit", "View audit trail of all agent actions"),
     ("/clear", "Clear conversation, start new session"),
     ("/compact", "Force conversation compaction"),
     ("/config", "Show current configuration"),
     ("/context", "Show context usage breakdown"),
+    ("/effort", "Set reasoning effort: low / medium / high / max"),
     ("/model", "Fetch and select model from provider"),
     ("/tokens", "Show estimated token count"),
     ("/reset", "Reset conversation history"),
@@ -52,6 +56,8 @@ class ChatInput(TextArea):
         self._history: list[str] = []
         self._history_index = -1
         self._suggestion_index = 0
+        self._debounce_timer: Any = None
+        self._last_sent_text = ""
 
     @property
     def suggestion_index(self) -> int:
@@ -142,11 +148,19 @@ class ChatInput(TextArea):
             event.stop()
             return
 
-    # ---- text change → show suggestions --------------------------------
+    # ---- text change → debounced suggestions --------------------------
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        if self._debounce_timer is not None:
+            self._debounce_timer.stop()
+        self._debounce_timer = self.set_timer(0.08, self._send_suggestions)
+
+    def _send_suggestions(self) -> None:
         text = self.text.strip()
-        if text.startswith("/") and self._get_matches(text):
+        if text == self._last_sent_text:
+            return
+        self._last_sent_text = text
+        if text.startswith("/"):
             self._suggestion_index = 0
             self.post_message(self.SuggestionsChanged(text))
         elif not text.startswith("/"):
