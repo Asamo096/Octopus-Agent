@@ -38,24 +38,29 @@ class LiteLLMProvider:
         *,
         max_tokens: int = 4096,
     ) -> AsyncIterator[StreamEvent]:
-        """Stream the model response via litellm."""
+        """Stream the model response via litellm.
+
+        For providers with native function calling (openai, anthropic, etc.),
+        sends tools as API parameters. For providers without (xiaomi_mimo, etc.),
+        injects tool descriptions into the system prompt and expects XML output.
+        """
         import litellm
 
-        # NEVER drop params — tools must reach the provider even if
-        # litellm doesn't recognize it as supporting function calling.
-        litellm.drop_params = False
+        litellm.drop_params = True
 
-        # Convert messages to litellm format
+        # Convert messages and handle tool injection for non-native providers
         litellm_messages = [m.to_dict() for m in messages]
+        use_native = tools and _supports_native_tools(model)
+        if tools and not use_native:
+            litellm_messages = _inject_tools_xml(litellm_messages, tools)
 
-        # Build kwargs
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": litellm_messages,
             "stream": True,
             "max_tokens": max_tokens,
         }
-        if tools:
+        if use_native:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
         if self._api_key:
@@ -157,3 +162,64 @@ class LiteLLMProvider:
         except Exception as e:
             yield StreamEvent(type=StreamEventType.ERROR, error=str(e))
             yield StreamEvent(type=StreamEventType.DONE)
+
+
+# ---------------------------------------------------------------------------
+# Helper: native tool support detection + XML injection for non-native providers
+# ---------------------------------------------------------------------------
+
+
+def _supports_native_tools(model: str) -> bool:
+    """Check if the provider supports native function calling via API params."""
+    native = {"openai", "anthropic", "deepseek", "groq", "together_ai",
+              "fireworks_ai", "bedrock", "vertex_ai", "azure", "mistral"}
+    prefix = model.split("/")[0] if "/" in model else ""
+    return prefix in native
+
+
+def _inject_tools_xml(
+    messages: list[dict[str, Any]], tools: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Inject tool definitions into system prompt as XML format.
+
+    For providers without native function calling, tools are described
+    as text and the model outputs <tool_call> XML blocks.
+    """
+    lines = [
+        "\n<system>",
+        "You have tools. Use them by outputting XML in this format:",
+        "",
+        "<tool_call>",
+        "<function=write_file>",
+        "<parameter=path>/path/to/file</parameter>",
+        "<parameter=content>file content here</parameter>",
+        "</function>",
+        "</tool_call>",
+        "",
+        "Available tools:",
+    ]
+    for t in tools:
+        fn = t.get("function", t)
+        name = fn.get("name", "")
+        desc = fn.get("description", "")
+        params = fn.get("parameters", {}).get("properties", {})
+        required = fn.get("parameters", {}).get("required", [])
+        lines.append(f"\n## {name}")
+        lines.append(f"  {desc}")
+        for pname, pinfo in params.items():
+            req = " (required)" if pname in required else ""
+            lines.append(f"  - {pname}: {pinfo.get('description', pinfo.get('type', 'str'))}{req}")
+    lines.append("</system>")
+    tool_text = "\n".join(lines)
+
+    result = []
+    injected = False
+    for msg in messages:
+        if msg.get("role") == "system" and not injected:
+            result.append({**msg, "content": msg.get("content", "") + tool_text})
+            injected = True
+        else:
+            result.append(msg)
+    if not injected:
+        result.insert(0, {"role": "system", "content": tool_text})
+    return result
