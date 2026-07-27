@@ -384,11 +384,12 @@ class OctopusTUI(App):
     # ---- Thinking indicator ----
 
     def show_thinking(self) -> None:
-        """Show animated Thinking... indicator while waiting for model."""
+        """Show indicator while waiting for model response."""
         if self._thinking_widget is not None:
-            return  # Already showing
+            return
+        ws = Path(self.octopus_workspace).name
         self._thinking_widget = Static(
-            "[dim italic #484f58]  Thinking...[/]", classes="thinking-indicator"
+            f"[dim italic #484f58]  {ws} > Thinking...[/]", classes="thinking-indicator"
         )
         self._log().mount(self._thinking_widget)
         self._log().scroll_end(animate=False)

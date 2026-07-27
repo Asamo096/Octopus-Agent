@@ -112,6 +112,18 @@ async def run_tui_async(
             conversation = _new_conversation(session_id, model)
     else:
         conversation = _new_conversation(session_id, model)
+        # Inject working directory so model knows its environment
+        import platform
+        import os as _os
+        conversation.add_message(Message(
+            role=Role.SYSTEM,
+            content=(
+                f"Working directory: {ws}\n"
+                f"OS: {platform.system()} {platform.release()}\n"
+                f"Shell: {_os.environ.get('SHELL', 'bash')}\n"
+                f"Use absolute or relative paths as needed. The workspace is {ws}."
+            ),
+        ))
 
     await kernel.state.create_session(session_id, workspace=str(ws))
 
