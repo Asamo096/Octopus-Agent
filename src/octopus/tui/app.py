@@ -207,6 +207,7 @@ class OctopusTUI(App):
         self._effort = "high"
         self._thinking_widget: Static | None = None
         self._thinking_timer: Any = None
+        self._thinking_frame = 0
 
     # ---- Compose ----
 
@@ -384,18 +385,33 @@ class OctopusTUI(App):
     # ---- Thinking indicator ----
 
     def show_thinking(self) -> None:
-        """Show indicator while waiting for model response."""
+        """Show animated thinking indicator while waiting for model."""
         if self._thinking_widget is not None:
             return
         ws = Path(self.octopus_workspace).name
-        self._thinking_widget = Static(
-            f"[dim italic #484f58]  {ws} > Thinking...[/]", classes="thinking-indicator"
-        )
+        self._thinking_frame = 0
+        self._thinking_widget = Static("", classes="thinking-indicator")
         self._log().mount(self._thinking_widget)
         self._log().scroll_end(animate=False)
 
+        def _animate() -> None:
+            if self._thinking_widget is None:
+                return
+            dots = ["", ".", "..", "...", " ..", "  .", "   "]
+            frame = self._thinking_frame % len(dots)
+            self._thinking_frame += 1
+            spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"][self._thinking_frame % 10]
+            self._thinking_widget.update(
+                f"[dim italic #484f58]  {spinner} {ws} > Thinking{dots[frame]}[/]"
+            )
+
+        self._thinking_timer = self.set_interval(0.15, _animate)
+
     def hide_thinking(self) -> None:
-        """Remove the Thinking... indicator."""
+        """Remove the thinking indicator and stop animation."""
+        if self._thinking_timer is not None:
+            self._thinking_timer.stop()
+            self._thinking_timer = None
         if self._thinking_widget is not None:
             self._thinking_widget.remove()
             self._thinking_widget = None
