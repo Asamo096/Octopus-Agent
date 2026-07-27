@@ -195,14 +195,26 @@ async def run_tui_async(
                         # Separate thinking from real content
                         think_match = re.search(r"<thinking>(.*?)</thinking>", chunk, re.DOTALL)
                         if think_match:
-                            # Stream thinking content in real-time
                             think_text = think_match.group(1)
                             if not hasattr(app, "_thinking_streaming"):
                                 app._thinking_streaming = True
                                 app.begin_thinking_stream()
                             app.append_thinking(think_text)
-                            # Remove thinking from display chunk
                             chunk = re.sub(r"<thinking>.*?</thinking>", "", chunk, flags=re.DOTALL)
+
+                        # Suppress display of XML tool call blocks that span multiple chunks.
+                        # Buffer incomplete blocks until closing tag arrives.
+                        if not hasattr(app, "_xml_buffer"):
+                            app._xml_buffer = ""
+                        app._xml_buffer += chunk
+                        # If we have a complete tool_call block (or no tool_call at all),
+                        # extract display text and keep the rest buffered
+                        if "</tool_call>" in app._xml_buffer or "<tool_call>" not in app._xml_buffer:
+                            chunk = app._xml_buffer
+                            app._xml_buffer = ""
+                        else:
+                            # Block is incomplete — suppress display until we get closing tag
+                            chunk = ""
 
                         # Real content: hide thinking, show stream
                         if chunk.strip():
@@ -211,7 +223,6 @@ async def run_tui_async(
                                 app.hide_thinking()
                                 app.finish_thinking()
                                 app._thinking_streaming = False
-                            # Strip entire XML tool call blocks before display
                             chunk = _strip_xml_artifacts(chunk)
                             if chunk.strip():
                                 if not streaming_started:
