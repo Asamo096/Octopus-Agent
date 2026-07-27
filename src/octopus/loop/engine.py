@@ -318,14 +318,33 @@ async def run_query(
                 for tc in collected_tool_calls:
                     tc.name = _TOOL_NAME_MAP.get(tc.name, tc.name)
 
-                # Deduplicate by (normalized_name, arguments)
+                # Deduplicate by (normalized_name, normalized_args)
                 seen = set()
+                seen_paths: set[str] = set()  # cross-tool: same path
                 unique_calls = []
                 for tc in collected_tool_calls:
-                    key = (tc.name, tc.arguments)
-                    if key not in seen:
-                        seen.add(key)
-                        unique_calls.append(tc)
+                    # Normalize JSON arguments: sort keys so {"b":1,"a":2} == {"a":2,"b":1}
+                    args_obj: dict[str, Any] = {}
+                    try:
+                        args_obj = json.loads(tc.arguments) if tc.arguments else {}
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                    args_normalized = json.dumps(args_obj, sort_keys=True)
+
+                    key = (tc.name, args_normalized)
+                    if key in seen:
+                        continue
+
+                    # Cross-tool dedup: if same file path is targeted by write+shell, keep first
+                    path = args_obj.get("path") or args_obj.get("file") if isinstance(args_obj, dict) else None
+                    if path and tc.name in ("write", "shell"):
+                        path_key = f"file:{path}"
+                        if path_key in seen_paths:
+                            continue
+                        seen_paths.add(path_key)
+
+                    seen.add(key)
+                    unique_calls.append(tc)
                 collected_tool_calls = unique_calls
         except Exception as exc:
             error_msg = str(exc)
