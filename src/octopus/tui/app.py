@@ -208,6 +208,7 @@ class OctopusTUI(App):
         self._thinking_widget: Static | None = None
         self._thinking_timer: Any = None
         self._thinking_frame = 0
+        self._file_cache: dict[str, str] = {}  # path → content for diff generation
 
     # ---- Compose ----
 
@@ -358,10 +359,17 @@ class OctopusTUI(App):
         return card
 
     @staticmethod
-    def update_tool_card(card: Static, name: str, result: str = "") -> None:
-        """Update tool card with result."""
+    def update_tool_card(
+        card: Static, name: str, result: str = "",
+        old_content: str = "", new_content: str = "", file_path: str = "",
+    ) -> None:
+        """Update tool card with result, showing diff for file changes."""
         lines = [f"[bold #7ee787]{name}[/]"]
-        if result:
+        if file_path and (old_content or new_content):
+            # Generate diff view
+            diff_lines = _build_diff(old_content, new_content, file_path)
+            lines.append(diff_lines)
+        elif result:
             preview = result.strip()[:400]
             if len(result.strip()) > 400:
                 preview += "\n[dim]... truncated[/]"
@@ -564,6 +572,44 @@ class OctopusTUI(App):
 # -----------------------------------------------------------------------
 # Markdown → Textual markup (using markdown-it-py, already a Textual dep)
 # -----------------------------------------------------------------------
+
+
+def _build_diff(old: str, new: str, path: str) -> str:
+    """Build colored unified diff for display in tool cards."""
+    import difflib
+
+    if not old:
+        # New file: all additions
+        lines = new.split("\n")
+        if len(lines) > 20:
+            lines = lines[:20] + [f"... +{len(new.split(chr(10))) - 20} more lines"]
+        return "\n".join(f"[green]+ {l}[/]" for l in lines if l or True)
+
+    old_lines = old.splitlines(keepends=True)
+    new_lines = new.splitlines(keepends=True)
+    diff = list(difflib.unified_diff(old_lines, new_lines,
+                                      fromfile=f"a/{path}", tofile=f"b/{path}"))
+    if not diff:
+        return "[dim]No changes[/]"
+
+    result = [f"[bold]Diff: {path}[/]"]
+    count = 0
+    for line in diff:
+        if count >= 30:
+            result.append(f"[dim]... +{len(diff) - 30} more lines[/]")
+            break
+        if line.startswith("+++") or line.startswith("---"):
+            result.append(f"[bold]{line.rstrip()}[/]")
+        elif line.startswith("+"):
+            result.append(f"[green]{line.rstrip()}[/]")
+        elif line.startswith("-"):
+            result.append(f"[red]{line.rstrip()}[/]")
+        elif line.startswith("@@"):
+            result.append(f"[bold #58a6ff]{line.rstrip()}[/]")
+        else:
+            result.append(f"[dim]{line.rstrip()}[/]")
+        count += 1
+    return "\n".join(result)
 
 
 def _render(text: str) -> str:

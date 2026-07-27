@@ -222,6 +222,8 @@ async def run_tui_async(
                         tc = event.tool_call
                         if tc:
                             turn_tool_calls += 1
+                            # Cache file content before write/edit for diff
+                            _cache_file_before_write(app, tc)
                             card = app.add_tool_card(tc.name, tc.arguments)
                             active_cards[tc.id or str(turn_tool_calls)] = card
 
@@ -230,10 +232,14 @@ async def run_tui_async(
                             tid = event.tool_data["tool_call_id"]
                             if tid in active_cards:
                                 result_text = event.text or ""
+                                tool_name = event.tool_data.get("tool_name", "")
+                                old_content, new_content, file_path = (
+                                    _get_diff_content(app, event.tool_data)
+                                )
                                 app.update_tool_card(
-                                    active_cards[tid],
-                                    event.tool_data.get("tool_name", ""),
-                                    result_text,
+                                    active_cards[tid], tool_name, result_text,
+                                    old_content=old_content, new_content=new_content,
+                                    file_path=file_path,
                                 )
 
                     elif event.type == StreamEventType.ERROR:
@@ -533,6 +539,52 @@ THEMES_KEYS = [
     "catppuccin-mocha", "solarized-dark", "tokyo-night",
     "rose-pine", "github-dark",
 ]
+
+
+def _cache_file_before_write(app: "OctopusTUI", tc: Any) -> None:
+    """Read file content before write/edit for later diff generation."""
+    import json as _json
+    try:
+        args = _json.loads(tc.arguments) if tc.arguments else {}
+    except Exception:
+        return
+    path = args.get("path") or args.get("file_path", "")
+    if not path or tc.name not in ("write_file", "edit_file", "write", "edit"):
+        return
+    try:
+        from pathlib import Path as _Path
+        p = _Path(path).expanduser().resolve()
+        if p.exists():
+            app._file_cache[str(p)] = p.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+
+def _get_diff_content(
+    app: "OctopusTUI", tool_data: dict[str, Any]
+) -> tuple[str, str, str]:
+    """Get old/new content and file path for diff display."""
+    tool_name = str(tool_data.get("tool_name", ""))
+    if tool_name not in ("write_file", "edit_file", "write", "edit"):
+        return "", "", ""
+
+    path = str(tool_data.get("file_path", ""))
+    if not path:
+        return "", "", ""
+
+    old = app._file_cache.pop(path, "")
+    new = ""
+    try:
+        from pathlib import Path as _Path
+        p = _Path(path).expanduser().resolve()
+        if p.exists():
+            new = p.read_text(encoding="utf-8", errors="replace")
+            if len(new) > 5000:
+                new = new[:5000] + "\n... [truncated]"
+    except Exception:
+        pass
+
+    return old, new, path
 
 
 def _handle_effort(app: "OctopusTUI", args: str) -> None:
