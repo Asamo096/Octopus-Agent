@@ -256,6 +256,9 @@ async def run_tui_async(
                                     old_content=old_content, new_content=new_content,
                                     file_path=file_path,
                                 )
+                                # Also show diff in sidebar panel
+                                if file_path and (old_content or new_content):
+                                    app.show_diff(old_content, new_content, file_path)
 
                     elif event.type == StreamEventType.ERROR:
                         app.add_error_message(event.error or "Unknown error")

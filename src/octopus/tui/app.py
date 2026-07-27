@@ -7,7 +7,7 @@ from typing import Any
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Static
 
 from octopus.tui.widgets.input import ChatInput, build_suggestions_text
@@ -117,12 +117,25 @@ class OctopusTUI(App):
     #banner-line { height: 1; color: #21262d; margin: 0 2; }
 
     #main { height: 1fr; }
+    #main-row { height: 1fr; }
+    #chat-col { width: 1fr; height: 1fr; }
     #chat-container {
         height: 1fr; border: round #21262d;
         padding: 1 2; margin: 0 1;
         background: #0d1117;
     }
     #chat-log { height: 1fr; }
+
+    #diff-sidebar {
+        width: 40; height: 1fr; display: none;
+        border: round #21262d;
+        background: #161b22; padding: 0 1; margin: 0 1 0 0;
+    }
+    #diff-title {
+        color: #58a6ff; text-style: bold;
+        padding: 1 0; border-bottom: solid #21262d;
+    }
+    #diff-content { height: 1fr; padding: 1 0; }
 
     #input-divider {
         height: 1; margin: 0 1; background: #30363d;
@@ -167,6 +180,7 @@ class OctopusTUI(App):
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit", show=False),
         Binding("ctrl+p", "toggle_permission", "Mode", show=False),
+        Binding("ctrl+s", "toggle_sidebar", "Diff", show=False),
         Binding("ctrl+t", "toggle_theme", "Theme", show=False),
         Binding("ctrl+shift+c", "copy_last", "Copy", show=False),
         Binding("escape", "interrupt", "Interrupt", show=False),
@@ -226,12 +240,18 @@ class OctopusTUI(App):
 
         yield Static("─" * max(self.size.width, 60), id="banner-line")
         with Vertical(id="main"):
-            with Vertical(id="chat-container"):
-                yield VerticalScroll(id="chat-log")
-            yield Static("", id="input-divider")
-            with Vertical(id="input-area"):
-                yield ChatInput(id="chat-input")
-                yield Static("", id="suggestions")
+            with Horizontal(id="main-row"):
+                with Vertical(id="chat-col"):
+                    with Vertical(id="chat-container"):
+                        yield VerticalScroll(id="chat-log")
+                    yield Static("", id="input-divider")
+                    with Vertical(id="input-area"):
+                        yield ChatInput(id="chat-input")
+                        yield Static("", id="suggestions")
+                # Diff sidebar (hidden by default, toggled with Ctrl+S)
+                with Vertical(id="diff-sidebar"):
+                    yield Static("[bold]Changes[/]", id="diff-title")
+                    yield VerticalScroll(id="diff-content")
         yield StatusBar(id="status-bar")
 
     def on_mount(self) -> None:
@@ -601,6 +621,38 @@ class OctopusTUI(App):
         except Exception:
             pass
         self.exit()
+
+    def action_toggle_sidebar(self) -> None:
+        """Toggle the diff sidebar visibility."""
+        try:
+            sb = self.query_one("#diff-sidebar", Vertical)
+            sb.display = not sb.display
+            # Resize main column
+            chat_col = self.query_one("#chat-col", Vertical)
+            if sb.display:
+                chat_col.styles.width = "1fr"
+            self.add_system_message(
+                f"Diff panel: {'shown' if sb.display else 'hidden'}"
+            )
+        except Exception:
+            pass
+
+    def show_diff(self, old: str, new: str, path: str) -> None:
+        """Display a file diff in the sidebar panel."""
+        diff_text = _build_diff(old, new, path)
+        try:
+            self.query_one("#diff-title", Static).update(
+                f"[bold #58a6ff]Changes: {path}[/]"
+            )
+            self.query_one("#diff-content", VerticalScroll).mount(
+                Static(diff_text)
+            )
+            # Auto-show sidebar on first diff
+            sb = self.query_one("#diff-sidebar", Vertical)
+            if not sb.display:
+                sb.display = True
+        except Exception:
+            pass
 
     def action_interrupt(self) -> None:
         pass
