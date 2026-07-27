@@ -195,17 +195,19 @@ async def run_tui_async(
                         chunk = event.text or ""
                         raw_text.append(chunk)
 
+                        # Strip XML artifacts before display
                         display_chunk = chunk
-                        m = re.search(
-                            r"<thinking>(.*?)</thinking>", chunk, re.DOTALL
-                        )
+                        # Extract thinking
+                        m = re.search(r"<thinking>(.*?)</thinking>", display_chunk, re.DOTALL)
                         if m:
-                            thinking = m.group(1).strip()
-                            if thinking:
-                                app.add_thinking(thinking)
+                            app.add_thinking(m.group(1).strip())
+                        # Strip all XML tags: thinking, tool_call, function, parameter
+                        for tag in ("thinking", "tool_call", r"function=.*?", "parameter=.*?", "tool_result"):
                             display_chunk = re.sub(
-                                r"<thinking>.*?</thinking>", "", chunk, flags=re.DOTALL
+                                rf"</?{tag}>", "", display_chunk, flags=re.DOTALL
                             )
+                        # Also strip self-closing forms
+                        display_chunk = re.sub(r"<[^>]+/>", "", display_chunk)
 
                         if display_chunk.strip():
                             if not streaming_started:
