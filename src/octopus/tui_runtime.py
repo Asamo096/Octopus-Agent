@@ -211,11 +211,8 @@ async def run_tui_async(
                                 app.hide_thinking()
                                 app.finish_thinking()
                                 app._thinking_streaming = False
-                            # Strip remaining XML tags
-                            for tag in ("tool_call", r"function=.*?", "parameter=.*?", "tool_result"):
-                                chunk = re.sub(rf"</?{tag}>", "", chunk, flags=re.DOTALL)
-                            chunk = re.sub(r"<[^>]+/>", "", chunk)
-
+                            # Strip entire XML tool call blocks before display
+                            chunk = _strip_xml_artifacts(chunk)
                             if chunk.strip():
                                 if not streaming_started:
                                     app.begin_streaming()
