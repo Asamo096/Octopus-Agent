@@ -562,11 +562,169 @@ class OctopusTUI(App):
 
 
 # -----------------------------------------------------------------------
-# Markdown → Textual markup
+# Markdown → Textual markup (using markdown-it-py, already a Textual dep)
 # -----------------------------------------------------------------------
 
 
 def _render(text: str) -> str:
+    """Render markdown to Textual-compatible Rich markup using markdown-it-py."""
+    try:
+        from markdown_it import MarkdownIt
+
+        md = MarkdownIt("gfm-like", {"breaks": True, "html": True})
+        tokens = md.parse(text)
+        return _md_tokens_to_markup(tokens)
+    except ImportError:
+        return _render_fallback(text)
+
+
+def _md_tokens_to_markup(tokens: list) -> str:
+    """Walk markdown-it token tree, emit Textual markup."""
+    result: list[str] = []
+    _walk(result, tokens, 0)
+    return "".join(result)
+
+
+def _walk(out: list[str], tokens: list, depth: int = 0) -> None:
+    """Recursive token walker — handles arbitrary nesting."""
+    i = 0
+    indent = "  " * depth
+    while i < len(tokens):
+        t = tokens[i]
+
+        if t.type == "inline":
+            _inline(out, t.children or [])
+        elif t.type.endswith("_open"):
+            tag = t.tag
+            # Find matching close token and collect children
+            children, skip = _collect_children(tokens, i)
+            _render_block(out, t, children, indent)
+            i += skip
+        elif t.type == "fence":
+            code_lines = t.content.strip().split("\n")
+            if len(code_lines) > 25:
+                code_lines = code_lines[:25]
+                code_lines.append(f"... +{len(t.content.split(chr(10))) - 25} more lines")
+            out.append("\n")
+            for cl in code_lines:
+                out.append(f"[dim #c9d1d9 on #161b22]  {cl}[/]\n")
+        elif t.type == "hr":
+            out.append("\n[dim]───[/]\n")
+        elif t.type == "softbreak":
+            out.append(" ")
+        elif t.type == "hardbreak":
+            out.append("\n")
+        elif t.type == "html_block":
+            if t.content.strip():
+                out.append(f"[dim]{t.content.strip()}[/]")
+        elif t.type == "html_inline":
+            out.append(t.content)
+        i += 1
+
+
+def _collect_children(tokens: list, start: int) -> tuple[list, int]:
+    """Collect all tokens between open and matching close, return (children, skip_count)."""
+    depth = 1
+    tag = tokens[start].tag
+    children = []
+    j = start + 1
+    while j < len(tokens) and depth > 0:
+        t = tokens[j]
+        if t.type.endswith("_open") and t.tag == tag:
+            depth += 1
+        elif t.type.endswith("_close") and t.tag == tag:
+            depth -= 1
+            if depth == 0:
+                break
+        children.append(t)
+        j += 1
+    return children, j - start + 1
+
+
+def _render_block(out: list[str], open_token, children: list, indent: str) -> None:
+    """Render a matched open/close block with its children."""
+    tt = open_token.type
+    if tt == "heading_open":
+        level = int(open_token.tag[1]) if open_token.tag.startswith("h") else 1
+        prefix = {1: "[bold #58a6ff]", 2: "[bold #58a6ff]", 3: "[bold]"}
+        out.append(prefix.get(level, "[bold]"))
+        _walk(out, children)
+        out.append("[/]\n")
+    elif tt == "paragraph_open":
+        out.append("\n")
+        _walk(out, children)
+        out.append("\n")
+    elif tt == "bullet_list_open":
+        out.append("")
+        _walk(out, children)
+        out.append("")
+    elif tt == "ordered_list_open":
+        _walk(out, children)
+    elif tt == "list_item_open":
+        out.append(f"{indent}[dim]-[/] ")
+        _walk(out, children)
+        out.append("\n")
+    elif tt == "blockquote_open":
+        out.append("[dim #8b949e]| ")
+        _walk(out, children)
+        out.append("[/]\n")
+    elif tt == "em_open":
+        out.append("[italic]")
+        _walk(out, children)
+        out.append("[/]")
+    elif tt == "strong_open":
+        out.append("[bold]")
+        _walk(out, children)
+        out.append("[/]")
+    elif tt in ("table_open", "thead_open", "tbody_open", "tr_open",
+                 "th_open", "td_open"):
+        out.append("")
+        _walk(out, children)
+    elif tt == "tr_close":
+        out.append("\n")
+    elif tt == "th_close" or tt == "td_close":
+        out.append(" | ")
+    elif tt == "table_close":
+        out.append("\n")
+    else:
+        # Unknown block: just walk children
+        _walk(out, children)
+
+
+def _inline(out: list[str], children: list) -> None:
+    for t in children:
+        if t.type == "text":
+            out.append(t.content)
+        elif t.type == "strong_open":
+            out.append("[bold]")
+        elif t.type == "strong_close":
+            out.append("[/]")
+        elif t.type == "em_open":
+            out.append("[italic]")
+        elif t.type == "em_close":
+            out.append("[/]")
+        elif t.type == "code_inline":
+            out.append(f"[bold #d2a8ff]{t.content}[/]")
+        elif t.type == "link_open":
+            pass  # skip links in terminal
+        elif t.type == "link_close":
+            pass
+        elif t.type == "image":
+            pass
+        elif t.type == "softbreak":
+            out.append(" ")
+        elif t.type == "hardbreak":
+            out.append("\n")
+        elif t.type == "html_inline":
+            out.append(t.content)
+        elif t.type == "s_open":
+            out.append("[dim]")
+        elif t.type == "s_close":
+            out.append("[/]")
+
+
+def _render_fallback(text: str) -> str:
+    """Regex-based fallback when markdown-it-py is not available."""
     import re
     blocks: list[str] = []
 
@@ -579,13 +737,10 @@ def _render(text: str) -> str:
     text = re.sub(r"(?m)^### (.+)$", r"[bold]\1[/]", text)
     text = re.sub(r"(?m)^## (.+)$", r"[bold #58a6ff]\1[/]", text)
     text = re.sub(r"(?m)^# (.+)$", r"[bold #58a6ff]\1[/]", text)
-    text = re.sub(r"\*\*\*(.+?)\*\*\*", r"[bold italic]\1[/]", text)
     text = re.sub(r"\*\*(.+?)\*\*", r"[bold]\1[/]", text)
     text = re.sub(r"\*(.+?)\*", r"[italic]\1[/]", text)
-    text = re.sub(r"(?m)^(\s*)[*-] (.+)$", r"\1[dim]  -[/] \2", text)
-    text = re.sub(r"(?m)^(\s*)\d+\. (.+)$", r"\1[dim]  -[/] \2", text)
+    text = re.sub(r"(?m)^(\s*)[*-] (.+)$", r"\1[dim]-[/] \2", text)
     text = re.sub(r"(?m)^> (.+)$", r"[dim #8b949e]| \1[/]", text)
-
     for i, code in enumerate(blocks):
         lines = code.strip().split("\n")
         if len(lines) > 25:
