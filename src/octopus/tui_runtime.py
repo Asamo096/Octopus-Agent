@@ -167,8 +167,9 @@ async def run_tui_async(
             raw_text: list[str] = []
             active_cards: dict[str, Any] = {}  # tool_call_id → card widget
 
-            # Show Thinking... while waiting
+            # Show Thinking... immediately, yield to let Textual render it
             app.show_thinking()
+            await asyncio.sleep(0)
 
             try:
                 async for event in run_query(
