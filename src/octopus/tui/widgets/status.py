@@ -41,5 +41,5 @@ class StatusBar(Static):
         parts = [f" [{color} bold]{label}[/]"]
         if self._tokens > 0:
             parts.append(f"[dim]tk:{self._fmt(self._tokens)}[/]")
-        parts.append("[dim]ctrl+p mode  ctrl+t theme  esc interrupt  ctrl+c quit[/]")
+        parts.append("[dim]ctrl+p mode  ctrl+s diff  ctrl+t theme  esc int  ctrl+c quit[/]")
         self.update("".join(parts))
