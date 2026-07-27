@@ -56,6 +56,7 @@ class LiteLLMProvider:
         }
         if tools:
             kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
         if self._api_key:
             kwargs["api_key"] = self._api_key
         if self._base_url:
