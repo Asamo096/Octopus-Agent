@@ -18,7 +18,10 @@ console = Console()
 
 
 def _run_async(coro: object) -> None:
-    asyncio.run(coro)  # type: ignore[arg-type]
+    try:
+        asyncio.run(coro)  # type: ignore[arg-type]
+    except KeyboardInterrupt:
+        pass  # Clean exit on Ctrl+C
 
 
 def version_callback(value: bool) -> None:

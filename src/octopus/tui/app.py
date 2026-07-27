@@ -565,6 +565,17 @@ class OctopusTUI(App):
         self._effort = level
         self.update_info()
 
+    def action_quit(self) -> None:
+        """Clean exit on Ctrl+C."""
+        self.hide_thinking()
+        try:
+            if self.octopus_kernel:
+                import asyncio
+                asyncio.ensure_future(self.octopus_kernel.shutdown())
+        except Exception:
+            pass
+        self.exit()
+
     def action_interrupt(self) -> None:
         pass
 
