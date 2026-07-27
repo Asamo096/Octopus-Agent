@@ -88,10 +88,25 @@ class WriteFileTool:
         content = args["content"]
 
         try:
+            # Overwrite protection: skip if file already has identical content
+            if path.exists():
+                existing = path.read_text(encoding="utf-8", errors="replace")
+                if existing == content:
+                    return ToolResult(
+                        success=True,
+                        output=f"File unchanged: {path} ({len(content)} bytes)",
+                        metadata={"bytes": len(content), "skipped": True},
+                    )
+                action = "Overwrote"
+            else:
+                action = "Wrote"
+
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
             return ToolResult(
-                success=True, output=f"Wrote {len(content)} bytes to {path}"
+                success=True,
+                output=f"{action} {path} ({len(content)} bytes, {content.count(chr(10))+1} lines)",
+                metadata={"bytes": len(content), "path": str(path)},
             )
         except Exception as e:
             return ToolResult(success=False, output=None, error=str(e))
@@ -130,18 +145,51 @@ class EditFileTool:
 
         try:
             text = path.read_text(encoding="utf-8")
+
+            # Exact match
             count = text.count(old_string)
+            if count == 1:
+                new_text = text.replace(old_string, new_string, 1)
+                path.write_text(new_text, encoding="utf-8")
+                return ToolResult(
+                    success=True,
+                    output=f"Edited {path} (1 replacement)",
+                    metadata={"path": str(path), "replacements": 1},
+                )
+
+            # Fuzzy: try stripping whitespace from old_string and matching
+            old_stripped = old_string.strip()
+            if old_stripped != old_string and old_stripped in text:
+                count_s = text.count(old_stripped)
+                if count_s == 1:
+                    new_text = text.replace(old_stripped, new_string, 1)
+                    path.write_text(new_text, encoding="utf-8")
+                    return ToolResult(
+                        success=True,
+                        output=f"Edited {path} (fuzzy match, stripped whitespace)",
+                        metadata={"path": str(path), "replacements": 1, "fuzzy": True},
+                    )
+
+            # Error reporting
             if count == 0:
+                # Show context: first 200 chars of file
+                preview = text[:200] + ("..." if len(text) > 200 else "")
                 return ToolResult(
                     success=False,
                     output=None,
-                    error="old_string not found in file",
+                    error=(
+                        f"old_string not found in {path}. "
+                        f"File starts with: {preview}"
+                    ),
                 )
             if count > 1:
                 return ToolResult(
                     success=False,
                     output=None,
-                    error=f"old_string found {count} times — must be unique",
+                    error=(
+                        f"old_string found {count} times in {path}. "
+                        f"Add more context to make it unique."
+                    ),
                 )
             new_text = text.replace(old_string, new_string, 1)
             path.write_text(new_text, encoding="utf-8")
