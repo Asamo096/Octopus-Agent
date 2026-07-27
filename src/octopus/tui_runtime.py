@@ -202,19 +202,11 @@ async def run_tui_async(
                             app.append_thinking(think_text)
                             chunk = re.sub(r"<thinking>.*?</thinking>", "", chunk, flags=re.DOTALL)
 
-                        # Suppress display of XML tool call blocks that span multiple chunks.
-                        # Buffer incomplete blocks until closing tag arrives.
-                        if not hasattr(app, "_xml_buffer"):
-                            app._xml_buffer = ""
-                        app._xml_buffer += chunk
-                        # If we have a complete tool_call block (or no tool_call at all),
-                        # extract display text and keep the rest buffered
-                        if "</tool_call>" in app._xml_buffer or "<tool_call>" not in app._xml_buffer:
-                            chunk = app._xml_buffer
-                            app._xml_buffer = ""
-                        else:
-                            # Block is incomplete — suppress display until we get closing tag
-                            chunk = ""
+                        # Stop displaying text once XML tool call starts.
+                        # The engine parses tool calls from accumulated raw_text.
+                        if "<tool_call>" in chunk or "<function=" in chunk:
+                            chunk = re.sub(r"<tool_call>.*", "", chunk, flags=re.DOTALL)
+                            chunk = re.sub(r"<function=.*", "", chunk, flags=re.DOTALL)
 
                         # Real content: hide thinking, show stream
                         if chunk.strip():
