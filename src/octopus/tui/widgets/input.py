@@ -20,6 +20,7 @@ SLASH_COMMANDS = [
     ("/compact", "Force conversation compaction"),
     ("/config", "Show current configuration"),
     ("/context", "Show context usage breakdown"),
+    ("/theme", "Switch theme: dark / light / contrast"),
     ("/effort", "Set reasoning effort: low / medium / high / max"),
     ("/model", "Fetch and select model from provider"),
     ("/tokens", "Show estimated token count"),

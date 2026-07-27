@@ -364,6 +364,10 @@ async def _handle_slash_command(
         )
         return
 
+    if cmd == "/theme":
+        app.action_toggle_theme()
+        return
+
     if cmd == "/effort":
         _handle_effort(app, args)
         return
@@ -415,6 +419,7 @@ def _show_help(app: "OctopusTUI") -> None:
         "/config      Show config\n"
         "/context     Show context usage\n"
         "/model       Select model\n"
+        "/theme       Switch theme (dark / light / contrast)\n"
         "/effort      Set reasoning effort (low/medium/high/max)\n"
         "/tokens      Token estimate\n"
         "/reset       Reset conversation\n"

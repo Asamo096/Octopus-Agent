@@ -14,22 +14,33 @@ from octopus.tui.widgets.input import ChatInput, build_suggestions_text
 from octopus.tui.widgets.status import StatusBar
 
 
-# Semantic color tokens — single source of truth
-C = {
-    "bg":       "#0d1117",
-    "surface":  "#161b22",
-    "border":   "#21262d",
-    "active":   "#30363d",
-    "text":     "#c9d1d9",
-    "dim":      "#8b949e",
-    "muted":    "#484f58",
-    "accent":   "#58a6ff",
-    "accent2":  "#00afff",
-    "success":  "#7ee787",
-    "warning":  "#d29922",
-    "error":    "#f85149",
-    "code_fg":  "#d2a8ff",
+# Theme definitions
+THEMES = {
+    "dark": {
+        "bg": "#0d1117", "surface": "#161b22", "border": "#21262d",
+        "active": "#30363d", "text": "#c9d1d9", "dim": "#8b949e",
+        "muted": "#484f58", "accent": "#58a6ff", "accent2": "#00afff",
+        "success": "#7ee787", "warning": "#d29922", "error": "#f85149",
+        "code_fg": "#d2a8ff", "input_bg": "#0d1117", "status_bg": "#161b22",
+    },
+    "light": {
+        "bg": "#ffffff", "surface": "#f6f8fa", "border": "#d0d7de",
+        "active": "#afb8c1", "text": "#1f2328", "dim": "#656d76",
+        "muted": "#8c959f", "accent": "#0969da", "accent2": "#0550ae",
+        "success": "#1a7f37", "warning": "#9a6700", "error": "#cf222e",
+        "code_fg": "#8250df", "input_bg": "#ffffff", "status_bg": "#f6f8fa",
+    },
+    "contrast": {
+        "bg": "#000000", "surface": "#1a1a1a", "border": "#ffffff",
+        "active": "#ffff00", "text": "#ffffff", "dim": "#cccccc",
+        "muted": "#999999", "accent": "#00ffff", "accent2": "#00ff00",
+        "success": "#00ff00", "warning": "#ffff00", "error": "#ff0000",
+        "code_fg": "#ff88ff", "input_bg": "#000000", "status_bg": "#1a1a1a",
+    },
 }
+
+# Active theme (mutable)
+C = dict(THEMES["dark"])
 
 ASCII_LOGO = [
     " ██████╗  ██████╗████████╗ ██████╗ ██████╗ ██╗   ██╗███████╗",
@@ -113,6 +124,7 @@ class OctopusTUI(App):
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit", show=False),
         Binding("ctrl+p", "toggle_permission", "Mode", show=False),
+        Binding("ctrl+t", "toggle_theme", "Theme", show=False),
         Binding("ctrl+shift+c", "copy_last", "Copy", show=False),
         Binding("escape", "interrupt", "Interrupt", show=False),
     ]
@@ -148,6 +160,7 @@ class OctopusTUI(App):
         self._streaming_timer: Any = None
         self._compact_banner_widget: Static | None = None
         self._compact_mode = False
+        self._theme_name = "dark"
         self._effort = "high"
         self._thinking_widget: Static | None = None
         self._thinking_timer: Any = None
@@ -396,6 +409,55 @@ class OctopusTUI(App):
             pass
 
     # ---- Actions ----
+
+    def action_toggle_theme(self) -> None:
+        """Cycle through themes: dark → light → contrast → dark."""
+        names = list(THEMES.keys())
+        try:
+            idx = names.index(self._theme_name)
+        except ValueError:
+            idx = 0
+        self._theme_name = names[(idx + 1) % len(names)]
+        # Update global color dict
+        C.update(THEMES[self._theme_name])
+        self._apply_theme()
+        self.add_system_message(f"Theme: [bold]{self._theme_name}[/]")
+
+    def _apply_theme(self) -> None:
+        """Apply current theme colors to all visible widgets."""
+        c = C
+        # Screen background
+        self.screen.styles.background = c["bg"]
+        # Status bar
+        try:
+            sb = self.query_one("#status-bar", StatusBar)
+            sb.styles.background = c["status_bg"]
+        except Exception:
+            pass
+        # Input area
+        try:
+            inp = self.query_one("#input-area", Vertical)
+            inp.styles.background = c["bg"]
+        except Exception:
+            pass
+        # Chat log
+        try:
+            cl = self.query_one("#chat-log", VerticalScroll)
+            cl.styles.background = c["bg"]
+        except Exception:
+            pass
+        # Chat input
+        try:
+            ci = self.query_one("#chat-input", ChatInput)
+            ci.styles.background = c["input_bg"]
+        except Exception:
+            pass
+        # Refresh banner
+        try:
+            if self._compact_banner_widget and self._compact_mode:
+                self._compact_banner_widget.update(self._compact_banner())
+        except Exception:
+            pass
 
     def action_toggle_permission(self) -> None:
         modes = ["default", "accept_edits", "full_auto", "plan"]
