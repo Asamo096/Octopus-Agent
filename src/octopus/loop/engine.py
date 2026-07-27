@@ -499,6 +499,7 @@ def _dedup_tool_calls(calls: list[Any]) -> list[Any]:
 
 
 _TOOL_NAME_MAP = {
+    # Shell aliases → shell
     "execute_shell": "shell",
     "execute_command": "shell",
     "run_command": "shell",
@@ -506,13 +507,21 @@ _TOOL_NAME_MAP = {
     "bash": "shell",
     "execute_block": "shell",
     "terminal": "shell",
-    "read_file": "read",
-    "file_read": "read",
-    "write_file": "write",
-    "file_write": "write",
-    "edit_file": "edit",
-    "file_edit": "edit",
+    # Read aliases → read_file
+    "read": "read_file",
+    "read_file": "read_file",
+    "file_read": "read_file",
+    # Write aliases → write_file
+    "write": "write_file",
+    "write_file": "write_file",
+    "file_write": "write_file",
+    # Edit aliases → edit_file
+    "edit": "edit_file",
+    "edit_file": "edit_file",
+    "file_edit": "edit_file",
+    # Search aliases
     "search_files": "grep",
+    "search": "grep",
     "find_files": "glob",
 }
 
