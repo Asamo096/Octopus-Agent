@@ -189,31 +189,38 @@ async def run_tui_async(
                         break
 
                     if event.type == StreamEventType.TEXT:
-                        if not first_token:
-                            first_token = True
-                            app.hide_thinking()
                         chunk = event.text or ""
                         raw_text.append(chunk)
 
-                        # Strip XML artifacts before display
-                        display_chunk = chunk
-                        # Extract thinking
-                        m = re.search(r"<thinking>(.*?)</thinking>", display_chunk, re.DOTALL)
-                        if m:
-                            app.add_thinking(m.group(1).strip())
-                        # Strip all XML tags: thinking, tool_call, function, parameter
-                        for tag in ("thinking", "tool_call", r"function=.*?", "parameter=.*?", "tool_result"):
-                            display_chunk = re.sub(
-                                rf"</?{tag}>", "", display_chunk, flags=re.DOTALL
-                            )
-                        # Also strip self-closing forms
-                        display_chunk = re.sub(r"<[^>]+/>", "", display_chunk)
+                        # Separate thinking from real content
+                        think_match = re.search(r"<thinking>(.*?)</thinking>", chunk, re.DOTALL)
+                        if think_match:
+                            # Stream thinking content in real-time
+                            think_text = think_match.group(1)
+                            if not hasattr(app, "_thinking_streaming"):
+                                app._thinking_streaming = True
+                                app.begin_thinking_stream()
+                            app.append_thinking(think_text)
+                            # Remove thinking from display chunk
+                            chunk = re.sub(r"<thinking>.*?</thinking>", "", chunk, flags=re.DOTALL)
 
-                        if display_chunk.strip():
-                            if not streaming_started:
-                                app.begin_streaming()
-                                streaming_started = True
-                            app.append_stream(display_chunk)
+                        # Real content: hide thinking, show stream
+                        if chunk.strip():
+                            if not first_token:
+                                first_token = True
+                                app.hide_thinking()
+                                app.finish_thinking()
+                                app._thinking_streaming = False
+                            # Strip remaining XML tags
+                            for tag in ("tool_call", r"function=.*?", "parameter=.*?", "tool_result"):
+                                chunk = re.sub(rf"</?{tag}>", "", chunk, flags=re.DOTALL)
+                            chunk = re.sub(r"<[^>]+/>", "", chunk)
+
+                            if chunk.strip():
+                                if not streaming_started:
+                                    app.begin_streaming()
+                                    streaming_started = True
+                                app.append_stream(chunk)
 
                     elif event.type == StreamEventType.TOOL_CALL:
                         if not first_token:

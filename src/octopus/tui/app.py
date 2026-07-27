@@ -208,6 +208,8 @@ class OctopusTUI(App):
         self._thinking_widget: Static | None = None
         self._thinking_timer: Any = None
         self._thinking_frame = 0
+        self._streaming_thinking: Static | None = None
+        self._streaming_thinking_text = ""
         self._file_cache: dict[str, str] = {}  # path → content for diff generation
 
     # ---- Compose ----
@@ -349,6 +351,30 @@ class OctopusTUI(App):
             Static(f"[dim italic #484f58]  Thought: {text}[/]", classes="thinking-msg")
         )
         self._log().scroll_end(animate=True, duration=0.15)
+
+    def begin_thinking_stream(self) -> None:
+        """Start a streaming thinking widget."""
+        self._streaming_thinking_text = ""
+        self._streaming_thinking = Static("", classes="thinking-msg")
+        self._log().mount(self._streaming_thinking)
+
+    def append_thinking(self, text: str) -> None:
+        """Stream thinking content in real-time."""
+        if self._streaming_thinking is not None:
+            self._streaming_thinking_text += text
+            preview = self._streaming_thinking_text[:200]
+            suffix = "..." if len(self._streaming_thinking_text) > 200 else ""
+            self._streaming_thinking.update(
+                f"[dim italic #484f58]  Thought: {preview}{suffix}[/]"
+            )
+            self._log().scroll_end(animate=False)
+
+    def finish_thinking(self) -> None:
+        """Collapse the thinking widget when real response begins."""
+        if self._streaming_thinking is not None:
+            self._streaming_thinking.remove()
+            self._streaming_thinking = None
+            self._streaming_thinking_text = ""
 
     def add_tool_card(self, name: str, args_str: str) -> Static:
         """Add a tool execution card, returns the card for result updates."""
